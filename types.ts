@@ -10,6 +10,7 @@ export interface AdAccount {
 
 export interface KpiData {
   id: string;
+  entityId: string;
   name: string;
   level: DataLevel;
   date: string;

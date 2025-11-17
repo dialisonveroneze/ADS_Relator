@@ -101,7 +101,7 @@ const App: React.FC = () => {
         kpiData.forEach(item => {
             if (!dailyTotals[item.date]) {
                 dailyTotals[item.date] = {
-                    id: item.date, name: `Resumo - ${item.date}`, level: selectedLevel, date: item.date,
+                    id: item.date, entityId: item.date, name: `Resumo - ${item.date}`, level: selectedLevel, date: item.date,
                     amountSpent: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0, results: 0,
                     costPerResult: 0, ctr: 0, cpc: 0, cpm: 0
                 };
@@ -124,11 +124,52 @@ const App: React.FC = () => {
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
     }, [kpiData, selectedLevel]);
+    
+    const tableData = useMemo(() => {
+        if (kpiData.length === 0) return [];
+        
+        if (selectedLevel === DataLevel.ACCOUNT) {
+            return kpiData.map(d => ({ ...d, name: new Date(d.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }));
+        }
+        
+        const aggregated: { [id: string]: KpiData } = {};
+        kpiData.forEach(item => {
+            if (!aggregated[item.entityId]) {
+                aggregated[item.entityId] = {
+                    id: item.entityId,
+                    entityId: item.entityId,
+                    name: item.name,
+                    level: item.level,
+                    date: '', // Aggregated, so no single date
+                    amountSpent: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0, results: 0,
+                    costPerResult: 0, ctr: 0, cpc: 0, cpm: 0
+                };
+            }
+            
+            const totals = aggregated[item.entityId];
+            totals.amountSpent += item.amountSpent;
+            totals.impressions += item.impressions;
+            totals.reach += item.reach; // Summing reach is not perfectly accurate but a common simplification
+            totals.clicks += item.clicks;
+            totals.linkClicks += item.linkClicks;
+            totals.results += item.results;
+        });
+    
+        Object.values(aggregated).forEach(totals => {
+            totals.costPerResult = totals.results > 0 ? parseFloat((totals.amountSpent / totals.results).toFixed(2)) : 0;
+            totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
+            totals.cpc = totals.clicks > 0 ? parseFloat((totals.amountSpent / totals.clicks).toFixed(2)) : 0;
+            totals.cpm = totals.impressions > 0 ? parseFloat(((totals.amountSpent / totals.impressions) * 1000).toFixed(2)) : 0;
+        });
+    
+        return Object.values(aggregated);
+    }, [kpiData, selectedLevel]);
 
 
     const handleAccountSelect = (account: AdAccount) => {
         setSelectedAccount(account);
         setSelectedLevel(DataLevel.ACCOUNT);
+        setKpiData([]); // Clear old data immediately
     };
 
     const LevelSelector: React.FC<{ disabled: boolean }> = ({ disabled }) => (
@@ -181,7 +222,7 @@ const App: React.FC = () => {
                         <MetricSelector disabled={isLoadingKpis} />
                     </div>
                     <LineChart data={aggregatedChartData} metric={chartMetric} label={chartMetrics[chartMetric].label} isLoading={isLoadingKpis} />
-                    <KpiTable data={kpiData} isLoading={isLoadingKpis} currency={selectedAccount.currency} />
+                    <KpiTable data={tableData} isLoading={isLoadingKpis} currency={selectedAccount.currency} />
                 </div>
             ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta de anúncio foi encontrada para este usuário.</p></div>))}
         </main>

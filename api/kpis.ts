@@ -50,10 +50,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     try {
-        const fields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,cost_per_action_type,ctr,cpc,cpm';
+        const fields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,cost_per_action_type,ctr,cpc,cpm,campaign_id,adset_id,ad_id,campaign_name,adset_name,ad_name';
         const levelParam = levelMap[level as DataLevel];
         
-        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&time_range=${JSON.stringify(dateRange)}&time_increment=1&access_token=${accessToken}`;
+        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&time_range=${JSON.stringify(dateRange)}&time_increment=1&limit=500&access_token=${accessToken}`;
         
         const metaResponse = await fetch(url);
         const data = await metaResponse.json();
@@ -86,9 +86,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             const results = resultAction?.value ?? '0';
             const costPerResult = costPerResultAction?.value ?? '0';
+            const entityId = item?.[`${levelParam}_id`] || (accountId as string);
 
             return {
-                id: item?.[`${levelParam}_id`] ? `${item[`${levelParam}_id`]}_${item.date_start}` : `${accountId}_${item.date_start}`,
+                id: `${entityId}_${item.date_start}`,
+                entityId: entityId,
                 name: item?.[`${levelParam}_name`] || `Resumo Diário`,
                 level: level as DataLevel,
                 date: item.date_start,

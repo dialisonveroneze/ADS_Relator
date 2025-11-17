@@ -37,20 +37,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         // Formata os dados da Meta para o tipo que nosso frontend espera.
         const formattedAccounts: AdAccount[] = allAccounts.map((acc: any) => {
-            // Lógica para determinar o saldo correto: prioriza o saldo pré-pago se existir.
-            let finalBalance = 0;
-            // A API de pré-pago retorna um objeto com 'amount' e 'currency'
+            let finalBalance: number;
+            // Para contas pré-pagas, o valor já vem na unidade monetária principal.
             if (acc.prepay_balance && acc.prepay_balance.amount) {
                 finalBalance = parseFloat(acc.prepay_balance.amount);
             } else {
-                // O saldo normal vem em centavos como uma string
-                finalBalance = parseFloat(acc.balance || '0');
+                // Para contas pós-pagas, o saldo vem em centavos e precisa ser dividido por 100.
+                finalBalance = parseFloat(acc.balance || '0') / 100;
             }
 
             return {
                 id: acc.id,
                 name: acc.name,
-                balance: finalBalance / 100, // Converte de centavos para a unidade principal
+                balance: finalBalance,
                 spendingLimit: parseFloat(acc.spend_cap || '0') / 100, 
                 amountSpent: parseFloat(acc.amount_spent || '0') / 100,
                 currency: acc.currency,
