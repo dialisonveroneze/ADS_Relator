@@ -13,22 +13,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
         const fields = 'id,name,balance,spend_cap,amount_spent,currency';
-        const url = `https://graph.facebook.com/v19.0/me/adaccounts?fields=${fields}&access_token=${accessToken}`;
-        
-        const metaResponse = await fetch(url);
-        const data = await metaResponse.json();
+        let allAccounts: any[] = [];
+        let url = `https://graph.facebook.com/v19.0/me/adaccounts?fields=${fields}&limit=100&access_token=${accessToken}`;
 
-        if (data.error) {
-            console.error("Erro da API da Meta:", data.error);
-            // Se o token for inválido, a Meta retorna um erro.
-            if (data.error.code === 190) {
-                 return res.status(401).json({ message: 'Token de acesso inválido ou expirado.' });
+        // Loop de paginação para buscar todas as contas
+        while (url) {
+            const metaResponse = await fetch(url);
+            const data = await metaResponse.json();
+
+            if (data.error) {
+                console.error("Erro da API da Meta:", data.error);
+                if (data.error.code === 190) {
+                     return res.status(401).json({ message: 'Token de acesso inválido ou expirado.' });
+                }
+                return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
             }
-            return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
+
+            allAccounts = allAccounts.concat(data.data);
+            
+            // Verifica se existe uma próxima página
+            url = data.paging && data.paging.next ? data.paging.next : null;
         }
         
         // Formata os dados da Meta para o tipo que nosso frontend espera.
-        const formattedAccounts: AdAccount[] = data.data.map((acc: any) => ({
+        const formattedAccounts: AdAccount[] = allAccounts.map((acc: any) => ({
             id: acc.id,
             name: acc.name,
             balance: parseFloat(acc.balance || '0') / 100, // A API retorna o saldo em centavos

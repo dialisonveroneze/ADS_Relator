@@ -71,37 +71,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let resultAction = null;
             let costPerResultAction = null;
 
-            if (item.actions) {
+            if (item?.actions) {
                 for (const type of prioritizedActionTypes) {
                     resultAction = item.actions.find((a: any) => a.action_type === type);
                     if (resultAction) break;
                 }
             }
-            if (item.cost_per_action_type) {
+            if (item?.cost_per_action_type) {
                  for (const type of prioritizedActionTypes) {
                     costPerResultAction = item.cost_per_action_type.find((a: any) => a.action_type === type);
                     if (costPerResultAction) break;
                 }
             }
 
-            const results = resultAction ? resultAction.value : '0';
-            const costPerResult = costPerResultAction ? costPerResultAction.value : '0';
+            const results = resultAction?.value ?? '0';
+            const costPerResult = costPerResultAction?.value ?? '0';
 
             return {
-                id: item[`${levelParam}_id`] ? `${item[`${levelParam}_id`]}_${item.date_start}` : `${accountId}_${item.date_start}`,
-                name: item[`${levelParam}_name`] || `Resumo Diário`,
+                id: item?.[`${levelParam}_id`] ? `${item[`${levelParam}_id`]}_${item.date_start}` : `${accountId}_${item.date_start}`,
+                name: item?.[`${levelParam}_name`] || `Resumo Diário`,
                 level: level as DataLevel,
                 date: item.date_start,
-                amountSpent: parseFloat(item.spend || '0'),
-                impressions: parseInt(item.impressions || '0', 10),
-                reach: parseInt(item.reach || '0', 10),
-                clicks: parseInt(item.clicks || '0', 10),
-                linkClicks: parseInt(item.inline_link_clicks || '0', 10),
+                amountSpent: parseFloat(item?.spend ?? '0'),
+                impressions: parseInt(item?.impressions ?? '0', 10),
+                reach: parseInt(item?.reach ?? '0', 10),
+                clicks: parseInt(item?.clicks ?? '0', 10),
+                linkClicks: parseInt(item?.inline_link_clicks ?? '0', 10),
                 results: parseInt(results, 10),
                 costPerResult: parseFloat(costPerResult),
-                ctr: parseFloat(item.ctr || '0'),
-                cpc: parseFloat(item.cpc || '0'),
-                cpm: parseFloat(item.cpm || '0'),
+                ctr: parseFloat(item?.ctr ?? '0'),
+                cpc: parseFloat(item?.cpc ?? '0'),
+                cpm: parseFloat(item?.cpm ?? '0'),
             };
         });
 
