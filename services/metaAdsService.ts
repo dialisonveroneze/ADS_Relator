@@ -1,4 +1,4 @@
-import { AdAccount, KpiData, DataLevel } from '../types';
+import { AdAccount, KpiData, DataLevel, DateRangeOption } from '../types';
 
 /**
  * Lida com a resposta de uma chamada fetch para a nossa API backend.
@@ -30,13 +30,14 @@ export const getAdAccounts = async (): Promise<AdAccount[]> => {
 };
 
 /**
- * Busca os dados de KPI para uma conta de anúncio e nível específicos.
+ * Busca os dados de KPI para uma conta de anúncio, nível e período específicos.
  * @param accountId O ID da conta de anúncio.
  * @param level O nível de agregação dos dados (Conta, Campanha, etc.).
+ * @param dateRange O período de tempo para a busca dos dados.
  * @returns Uma promessa que resolve com um array de KpiData.
  */
-export const getKpiData = (accountId: string, level: DataLevel): Promise<KpiData[]> => {
-    const params = new URLSearchParams({ accountId, level });
+export const getKpiData = (accountId: string, level: DataLevel, dateRange: DateRangeOption): Promise<KpiData[]> => {
+    const params = new URLSearchParams({ accountId, level, dateRange });
     const response = fetch(`/api/kpis?${params.toString()}`);
     return response.then(handleApiResponse);
 };

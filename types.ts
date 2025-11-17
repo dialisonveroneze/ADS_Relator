@@ -32,3 +32,5 @@ export enum DataLevel {
   AD_SET = 'Grupo de Anúncios',
   AD = 'Anúncio',
 }
+
+export type DateRangeOption = 'last_7_days' | 'last_14_days' | 'last_30_days' | 'this_month' | 'last_month';

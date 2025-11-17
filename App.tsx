@@ -6,7 +6,7 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
-import { AdAccount, KpiData, DataLevel } from './types';
+import { AdAccount, KpiData, DataLevel, DateRangeOption } from './types';
 
 const chartMetrics = {
     amountSpent: { label: 'Valor Gasto' },
@@ -15,6 +15,14 @@ const chartMetrics = {
     ctr: { label: 'CTR (%)' },
 };
 type ChartMetric = keyof typeof chartMetrics;
+
+const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
+    { key: 'last_7_days', label: 'Últimos 7 dias' },
+    { key: 'last_14_days', label: 'Últimos 14 dias' },
+    { key: 'last_30_days', label: 'Últimos 30 dias' },
+    { key: 'this_month', label: 'Este Mês' },
+    { key: 'last_month', label: 'Mês Passado' },
+];
 
 const App: React.FC = () => {
     // Authentication State
@@ -25,6 +33,7 @@ const App: React.FC = () => {
     const [selectedAccount, setSelectedAccount] = useState<AdAccount | null>(null);
     const [kpiData, setKpiData] = useState<KpiData[]>([]);
     const [selectedLevel, setSelectedLevel] = useState<DataLevel>(DataLevel.ACCOUNT);
+    const [dateRange, setDateRange] = useState<DateRangeOption>('last_14_days');
     const [chartMetric, setChartMetric] = useState<ChartMetric>('amountSpent');
     const [isLoadingKpis, setIsLoadingKpis] = useState<boolean>(false);
     const [isLoadingAccounts, setIsLoadingAccounts] = useState<boolean>(false);
@@ -75,7 +84,7 @@ const App: React.FC = () => {
         setIsLoadingKpis(true);
         setError(null);
         try {
-            const data = await getKpiData(selectedAccount.id, selectedLevel);
+            const data = await getKpiData(selectedAccount.id, selectedLevel, dateRange);
             setKpiData(data);
         } catch (err: any) {
             if (err.message === 'Unauthorized') {
@@ -86,7 +95,7 @@ const App: React.FC = () => {
         } finally {
             setIsLoadingKpis(false);
         }
-    }, [selectedAccount, selectedLevel, isAuthenticated, handleAuthenticationError]);
+    }, [selectedAccount, selectedLevel, dateRange, isAuthenticated, handleAuthenticationError]);
 
     useEffect(() => {
         fetchKpiData();
@@ -169,30 +178,49 @@ const App: React.FC = () => {
     const handleAccountSelect = (account: AdAccount) => {
         setSelectedAccount(account);
         setSelectedLevel(DataLevel.ACCOUNT);
+        setDateRange('last_14_days');
         setKpiData([]); // Clear old data immediately
     };
 
     const LevelSelector: React.FC<{ disabled: boolean }> = ({ disabled }) => (
-        <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 mr-2">Nível:</span>
-            {(Object.values(DataLevel)).map(level => (
-                <button
-                    key={level} onClick={() => setSelectedLevel(level)} disabled={disabled}
-                    className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${selectedLevel === level ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
-                >{level}</button>
-            ))}
+        <div>
+            <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 mr-2 block mb-2">Nível:</span>
+            <div className="flex flex-wrap items-center gap-2">
+                {(Object.values(DataLevel)).map(level => (
+                    <button
+                        key={level} onClick={() => setSelectedLevel(level)} disabled={disabled}
+                        className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${selectedLevel === level ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >{level}</button>
+                ))}
+            </div>
+        </div>
+    );
+    
+     const DateRangeSelector: React.FC<{ disabled: boolean }> = ({ disabled }) => (
+        <div>
+            <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 mr-2 block mb-2">Período:</span>
+            <div className="flex flex-wrap items-center gap-2">
+                {dateRangeOptions.map(option => (
+                    <button
+                        key={option.key} onClick={() => setDateRange(option.key)} disabled={disabled}
+                        className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${dateRange === option.key ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >{option.label}</button>
+                ))}
+            </div>
         </div>
     );
     
     const MetricSelector: React.FC<{ disabled: boolean }> = ({ disabled }) => (
-         <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 mr-2">Métrica do Gráfico:</span>
-            {(Object.keys(chartMetrics) as ChartMetric[]).map(metric => (
-                <button
-                    key={metric} onClick={() => setChartMetric(metric)} disabled={disabled}
-                    className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${chartMetric === metric ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
-                >{chartMetrics[metric].label}</button>
-            ))}
+         <div>
+            <span className="text-sm font-semibold text-gray-600 dark:text-gray-300 mr-2 block mb-2">Métrica do Gráfico:</span>
+            <div className="flex flex-wrap items-center gap-2">
+                {(Object.keys(chartMetrics) as ChartMetric[]).map(metric => (
+                    <button
+                        key={metric} onClick={() => setChartMetric(metric)} disabled={disabled}
+                        className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${chartMetric === metric ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >{chartMetrics[metric].label}</button>
+                ))}
+            </div>
         </div>
     );
 
@@ -218,7 +246,10 @@ const App: React.FC = () => {
                  <div>
                     <BalanceCard account={selectedAccount} />
                     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg space-y-4">
-                        <LevelSelector disabled={isLoadingKpis} />
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
+                           <LevelSelector disabled={isLoadingKpis} />
+                           <DateRangeSelector disabled={isLoadingKpis} />
+                        </div>
                         <MetricSelector disabled={isLoadingKpis} />
                     </div>
                     <LineChart data={aggregatedChartData} metric={chartMetric} label={chartMetrics[chartMetric].label} isLoading={isLoadingKpis} />

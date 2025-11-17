@@ -1,7 +1,7 @@
 // api/kpis.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
-import { KpiData, DataLevel } from '../types';
+import { KpiData, DataLevel, DateRangeOption } from '../types';
 
 // Mapeia nossos níveis de dados para os níveis da API da Meta
 const levelMap: Record<DataLevel, string> = {
@@ -34,21 +34,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(401).json({ message: 'Não autorizado: Token não encontrado.' });
     }
 
-    const { accountId, level } = req.query;
+    const { accountId, level, dateRange: dateRangeQuery } = req.query;
 
     if (!accountId || typeof accountId !== 'string' || !level || typeof level !== 'string' || !Object.values(DataLevel).includes(level as DataLevel)) {
         return res.status(400).json({ message: 'ID da conta e nível são obrigatórios.' });
     }
     const typedLevel = level as DataLevel;
+    const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
 
+    let since: string;
+    let until: string;
     const today = new Date();
-    const fourteenDaysAgo = new Date();
-    fourteenDaysAgo.setDate(today.getDate() - 13);
+    today.setUTCHours(0, 0, 0, 0); // Normaliza para o início do dia em UTC
+
+    switch (dateRange) {
+        case 'last_7_days':
+            until = today.toISOString().split('T')[0];
+            const sevenDaysAgo = new Date(today);
+            sevenDaysAgo.setUTCDate(today.getUTCDate() - 6);
+            since = sevenDaysAgo.toISOString().split('T')[0];
+            break;
+        case 'last_30_days':
+            until = today.toISOString().split('T')[0];
+            const thirtyDaysAgo = new Date(today);
+            thirtyDaysAgo.setUTCDate(today.getUTCDate() - 29);
+            since = thirtyDaysAgo.toISOString().split('T')[0];
+            break;
+        case 'this_month':
+            until = today.toISOString().split('T')[0];
+            const firstDayThisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+            since = firstDayThisMonth.toISOString().split('T')[0];
+            break;
+        case 'last_month':
+            const firstDayCurrentMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+            const lastDayLastMonth = new Date(firstDayCurrentMonth);
+            lastDayLastMonth.setUTCDate(0); // Vai para o último dia do mês anterior
+            until = lastDayLastMonth.toISOString().split('T')[0];
+
+            const firstDayLastMonth = new Date(Date.UTC(lastDayLastMonth.getUTCFullYear(), lastDayLastMonth.getUTCMonth(), 1));
+            since = firstDayLastMonth.toISOString().split('T')[0];
+            break;
+        case 'last_14_days':
+        default:
+            until = today.toISOString().split('T')[0];
+            const fourteenDaysAgo = new Date(today);
+            fourteenDaysAgo.setUTCDate(today.getUTCDate() - 13);
+            since = fourteenDaysAgo.toISOString().split('T')[0];
+            break;
+    }
     
-    const dateRange = {
-        since: fourteenDaysAgo.toISOString().split('T')[0],
-        until: today.toISOString().split('T')[0],
-    };
+    const timeRange = { since, until };
 
     try {
         const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,cost_per_action_type,ctr,cpc,cpm';
@@ -70,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const fields = baseFields + dynamicFields;
         const levelParam = levelMap[typedLevel];
         
-        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&time_range=${JSON.stringify(dateRange)}&time_increment=1&limit=500&access_token=${accessToken}`;
+        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&time_range=${JSON.stringify(timeRange)}&time_increment=1&limit=500&access_token=${accessToken}`;
         
         const metaResponse = await fetch(url);
         const data = await metaResponse.json();
