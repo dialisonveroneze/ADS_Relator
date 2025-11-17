@@ -71,12 +71,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timeRange = { since, until };
 
     try {
-        // Usa os campos `results` e `cost_per_result` calculados pela Meta para maior estabilidade.
-        // O campo genérico 'actions' pode ser frágil e causar falhas na API.
-        const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,ctr,cpc,cpm,results,cost_per_result';
-        let dynamicFields = '';
+        let baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,ctr,cpc,cpm';
+        
+        // **CORREÇÃO CRÍTICA**: Só solicita `results` e `cost_per_result` para níveis onde fazem sentido.
+        // Pedir esses campos no nível da conta retorna uma resposta vazia e causa o erro.
+        if (typedLevel !== DataLevel.ACCOUNT) {
+            baseFields += ',results,cost_per_result';
+        }
 
-        // Adiciona campos específicos do nível para obter os nomes corretos
+        let dynamicFields = '';
         switch (typedLevel) {
             case DataLevel.CAMPAIGN:
                 dynamicFields = ',campaign_id,campaign_name';
@@ -105,7 +108,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
         }
         
-        // Formata os dados de insights para o tipo KpiData
         const formattedKpi: KpiData[] = (data.data || []).map((item: any) => {
             const entityId = item[`${levelParam}_id`] || accountId;
             let entityName: string;
@@ -127,17 +129,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                      entityName = `(ID: ${entityId})`;
             }
 
-            // Usa os valores diretamente da resposta da API
-            const results = (item.results || []).length > 0 ? parseInt(item.results[0].value, 10) : 0;
-            const costPerResult = (item.cost_per_result || []).length > 0 ? parseFloat(item.cost_per_result[0].value) : 0;
+            const spend = parseFloat(item?.spend ?? '0');
+            let results = 0;
+            let costPerResult = 0;
 
+            // Processa `results` e `cost_per_result` apenas se foram solicitados e existem
+            if (typedLevel !== DataLevel.ACCOUNT) {
+                if (item.results && Array.isArray(item.results)) {
+                    results = item.results.reduce((total, action) => total + parseInt(action.value || '0', 10), 0);
+                }
+                
+                if (item.cost_per_result && Array.isArray(item.cost_per_result) && item.cost_per_result.length > 0) {
+                     // Pega o custo do primeiro tipo de resultado, que geralmente é o principal.
+                    costPerResult = parseFloat(item.cost_per_result[0].value || '0');
+                } else if (results > 0) {
+                    // Calcula manualmente se a API não fornecer
+                    costPerResult = spend / results;
+                }
+            }
+            
             return {
                 id: `${entityId}_${item.date_start}`,
                 entityId: entityId,
                 name: entityName,
                 level: typedLevel,
                 date: item.date_start,
-                amountSpent: parseFloat(item?.spend ?? '0'),
+                amountSpent: spend,
                 impressions: parseInt(item?.impressions ?? '0', 10),
                 reach: parseInt(item?.reach ?? '0', 10),
                 clicks: parseInt(item?.clicks ?? '0', 10),
