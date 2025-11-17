@@ -54,16 +54,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,cost_per_action_type,ctr,cpc,cpm';
         let dynamicFields = '';
 
-        // Adiciona campos específicos do nível para evitar erros na API
+        // Adiciona campos específicos do nível, incluindo IDs dos pais para obter os nomes
         switch (typedLevel) {
             case DataLevel.CAMPAIGN:
                 dynamicFields = ',campaign_id,campaign_name';
                 break;
             case DataLevel.AD_SET:
-                dynamicFields = ',adset_id,adset_name,campaign_name';
+                dynamicFields = ',adset_id,adset_name,campaign_id,campaign_name';
                 break;
             case DataLevel.AD:
-                dynamicFields = ',ad_id,ad_name,adset_name,campaign_name';
+                dynamicFields = ',ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name';
                 break;
         }
         
@@ -105,14 +105,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const costPerResult = costPerResultAction?.value ?? '0';
             
             const entityId = item[`${levelParam}_id`] || accountId;
-            let entityName = item[`${levelParam}_name`];
+            let entityName: string;
 
-            if (!entityName) {
-                if (typedLevel === DataLevel.ACCOUNT) {
+            switch (typedLevel) {
+                case DataLevel.ACCOUNT:
                     entityName = `Resumo Diário`;
-                } else {
-                    entityName = `(Sem Nome - ID: ${entityId})`;
-                }
+                    break;
+                case DataLevel.CAMPAIGN:
+                    entityName = item.campaign_name || `(Sem Nome - ID: ${entityId})`;
+                    break;
+                case DataLevel.AD_SET:
+                    entityName = `${item.campaign_name || '(Campanha sem nome)'} > ${item.adset_name || `(Grupo sem nome - ID: ${entityId})`}`;
+                    break;
+                case DataLevel.AD:
+                    entityName = `${item.campaign_name || '(Campanha sem nome)'} > ${item.adset_name || '(Grupo sem nome)'} > ${item.ad_name || `(Anúncio sem nome - ID: ${entityId})`}`;
+                    break;
+                default:
+                     entityName = `(ID: ${entityId})`;
             }
 
 
