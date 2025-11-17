@@ -73,6 +73,7 @@ const App: React.FC = () => {
     const fetchKpiData = useCallback(async () => {
         if (!selectedAccount || !isAuthenticated) return;
         setIsLoadingKpis(true);
+        setError(null);
         try {
             const data = await getKpiData(selectedAccount.id, selectedLevel);
             setKpiData(data);
@@ -180,7 +181,7 @@ const App: React.FC = () => {
                         <MetricSelector disabled={isLoadingKpis} />
                     </div>
                     <LineChart data={aggregatedChartData} metric={chartMetric} label={chartMetrics[chartMetric].label} isLoading={isLoadingKpis} />
-                    <KpiTable data={kpiData} isLoading={isLoadingKpis} />
+                    <KpiTable data={kpiData} isLoading={isLoadingKpis} currency={selectedAccount.currency} />
                 </div>
             ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta de anúncio foi encontrada para este usuário.</p></div>))}
         </main>

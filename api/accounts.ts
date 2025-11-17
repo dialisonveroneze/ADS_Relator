@@ -31,9 +31,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const formattedAccounts: AdAccount[] = data.data.map((acc: any) => ({
             id: acc.id,
             name: acc.name,
-            balance: parseFloat(acc.balance) / 100, // A API retorna o saldo em centavos
-            spendingLimit: parseFloat(acc.spend_cap) / 100, // Limite também em centavos
-            amountSpent: parseFloat(acc.amount_spent) / 100, // Gasto também em centavos
+            balance: parseFloat(acc.balance || '0') / 100, // A API retorna o saldo em centavos
+            spendingLimit: parseFloat(acc.spend_cap || '0') / 100, // Limite também em centavos
+            amountSpent: parseFloat(acc.amount_spent || '0') / 100, // Gasto também em centavos
             currency: acc.currency,
         }));
 

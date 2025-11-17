@@ -4,11 +4,12 @@ import { KpiData } from '../types';
 interface KpiTableProps {
     data: KpiData[];
     isLoading: boolean;
+    currency: string;
 }
 
-const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading }) => {
+const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
 
-    const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+    const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
 
     const headers = [

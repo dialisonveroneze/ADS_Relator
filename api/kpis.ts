@@ -11,6 +11,21 @@ const levelMap: Record<DataLevel, string> = {
   [DataLevel.AD]: 'ad',
 };
 
+// Lista priorizada de tipos de ação para encontrar a métrica de "Resultado" mais relevante.
+const prioritizedActionTypes = [
+    'offsite_conversion.fb_pixel_purchase',
+    'purchase',
+    'offsite_conversion.fb_pixel_complete_registration',
+    'complete_registration',
+    'offsite_conversion.fb_pixel_lead',
+    'lead',
+    'offsite_conversion.fb_pixel_add_to_cart',
+    'add_to_cart',
+    'link_click',
+    'landing_page_view',
+];
+
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
     const accessToken = cookies.meta_token;
@@ -53,24 +68,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         // Formata os dados de insights para o tipo KpiData
         const formattedKpi: KpiData[] = (data.data || []).map((item: any) => {
-            const results = item.actions?.find((a: any) => a.action_type === 'offsite_conversion.fb_pixel_purchase')?.value ?? item.actions?.find((a: any) => a.action_type === 'link_click')?.value ?? 0;
-            const costPerResult = item.cost_per_action_type?.find((a: any) => a.action_type === 'offsite_conversion.fb_pixel_purchase')?.value ?? item.cost_per_action_type?.find((a: any) => a.action_type === 'link_click')?.value ?? 0;
+            let resultAction = null;
+            let costPerResultAction = null;
+
+            if (item.actions) {
+                for (const type of prioritizedActionTypes) {
+                    resultAction = item.actions.find((a: any) => a.action_type === type);
+                    if (resultAction) break;
+                }
+            }
+            if (item.cost_per_action_type) {
+                 for (const type of prioritizedActionTypes) {
+                    costPerResultAction = item.cost_per_action_type.find((a: any) => a.action_type === type);
+                    if (costPerResultAction) break;
+                }
+            }
+
+            const results = resultAction ? resultAction.value : '0';
+            const costPerResult = costPerResultAction ? costPerResultAction.value : '0';
 
             return {
                 id: item[`${levelParam}_id`] ? `${item[`${levelParam}_id`]}_${item.date_start}` : `${accountId}_${item.date_start}`,
                 name: item[`${levelParam}_name`] || `Resumo Diário`,
                 level: level as DataLevel,
                 date: item.date_start,
-                amountSpent: parseFloat(item.spend || 0),
-                impressions: parseInt(item.impressions || 0, 10),
-                reach: parseInt(item.reach || 0, 10),
-                clicks: parseInt(item.clicks || 0, 10),
-                linkClicks: parseInt(item.inline_link_clicks || 0, 10),
+                amountSpent: parseFloat(item.spend || '0'),
+                impressions: parseInt(item.impressions || '0', 10),
+                reach: parseInt(item.reach || '0', 10),
+                clicks: parseInt(item.clicks || '0', 10),
+                linkClicks: parseInt(item.inline_link_clicks || '0', 10),
                 results: parseInt(results, 10),
                 costPerResult: parseFloat(costPerResult),
-                ctr: parseFloat(item.ctr || 0),
-                cpc: parseFloat(item.cpc || 0),
-                cpm: parseFloat(item.cpm || 0),
+                ctr: parseFloat(item.ctr || '0'),
+                cpc: parseFloat(item.cpc || '0'),
+                cpm: parseFloat(item.cpm || '0'),
             };
         });
 
