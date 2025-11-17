@@ -11,21 +11,6 @@ const levelMap: Record<DataLevel, string> = {
   [DataLevel.AD]: 'ad',
 };
 
-// Lista priorizada de tipos de ação para encontrar a métrica de "Resultado" mais relevante.
-const prioritizedActionTypes = [
-    'offsite_conversion.fb_pixel_purchase',
-    'purchase',
-    'offsite_conversion.fb_pixel_complete_registration',
-    'complete_registration',
-    'offsite_conversion.fb_pixel_lead',
-    'lead',
-    'offsite_conversion.fb_pixel_add_to_cart',
-    'add_to_cart',
-    'link_click',
-    'landing_page_view',
-];
-
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
     const accessToken = cookies.meta_token;
@@ -86,11 +71,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timeRange = { since, until };
 
     try {
-        // Removido 'cost_per_action_type' para maior robustez. O cálculo será feito manualmente.
-        const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,ctr,cpc,cpm';
+        // Usa os campos `results` e `cost_per_result` calculados pela Meta para maior estabilidade.
+        // O campo genérico 'actions' pode ser frágil e causar falhas na API.
+        const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,ctr,cpc,cpm,results,cost_per_result';
         let dynamicFields = '';
 
-        // Adiciona campos específicos do nível, incluindo IDs dos pais para obter os nomes
+        // Adiciona campos específicos do nível para obter os nomes corretos
         switch (typedLevel) {
             case DataLevel.CAMPAIGN:
                 dynamicFields = ',campaign_id,campaign_name';
@@ -121,22 +107,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         // Formata os dados de insights para o tipo KpiData
         const formattedKpi: KpiData[] = (data.data || []).map((item: any) => {
-            let resultAction = null;
-
-            // Encontra a ação de resultado mais relevante com segurança
-            if (Array.isArray(item?.actions)) {
-                for (const type of prioritizedActionTypes) {
-                    resultAction = item.actions.find((a: any) => a.action_type === type);
-                    if (resultAction) break;
-                }
-            }
-
-            const amountSpent = parseFloat(item?.spend ?? '0');
-            const results = parseInt(resultAction?.value ?? '0', 10);
-            
-            // Calcula o custo por resultado manualmente para maior confiabilidade
-            const costPerResult = results > 0 ? parseFloat((amountSpent / results).toFixed(2)) : 0;
-            
             const entityId = item[`${levelParam}_id`] || accountId;
             let entityName: string;
 
@@ -157,6 +127,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                      entityName = `(ID: ${entityId})`;
             }
 
+            // Usa os valores diretamente da resposta da API
+            const results = (item.results || []).length > 0 ? parseInt(item.results[0].value, 10) : 0;
+            const costPerResult = (item.cost_per_result || []).length > 0 ? parseFloat(item.cost_per_result[0].value) : 0;
 
             return {
                 id: `${entityId}_${item.date_start}`,
@@ -164,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 name: entityName,
                 level: typedLevel,
                 date: item.date_start,
-                amountSpent: amountSpent,
+                amountSpent: parseFloat(item?.spend ?? '0'),
                 impressions: parseInt(item?.impressions ?? '0', 10),
                 reach: parseInt(item?.reach ?? '0', 10),
                 clicks: parseInt(item?.clicks ?? '0', 10),
