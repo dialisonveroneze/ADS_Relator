@@ -4,6 +4,7 @@ import BalanceList from './components/BalanceList';
 import BalanceCard from './components/BalanceCard';
 import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
+import LoginScreen from './components/LoginScreen';
 import { getAdAccounts, getKpiData } from './services/metaAdsService';
 import { AdAccount, KpiData, DataLevel } from './types';
 
@@ -14,6 +15,12 @@ const chartMetrics = {
     ctr: { label: 'CTR (%)' },
 };
 type ChartMetric = keyof typeof chartMetrics;
+
+// Em um projeto real com um processo de build (Vite, Create React App),
+// esta variável viria de um arquivo .env para segurança e flexibilidade.
+// Ex: const META_APP_ID = process.env.REACT_APP_META_APP_ID;
+const META_APP_ID = '897058925982042';
+
 
 const App: React.FC = () => {
     // Authentication State
@@ -32,10 +39,13 @@ const App: React.FC = () => {
     
     const handleLogin = () => {
         setIsAuthenticating(true);
+        // Simula o fluxo OAuth: o usuário seria redirecionado para a Meta,
+        // faria o login e voltaria para o app com um código de autorização.
+        // O app então trocaria esse código por um access token no backend.
         setTimeout(() => {
             setAccessToken('SIMULATED_ACCESS_TOKEN');
             setIsAuthenticating(false);
-        }, 1000);
+        }, 1500);
     };
 
     const handleLogout = () => {
@@ -158,32 +168,12 @@ const App: React.FC = () => {
             return (
                 <div className="flex flex-col items-center justify-center text-center p-8 min-h-[calc(100vh-80px)]">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                    <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Autenticando...</p>
+                    <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Autenticando com a Meta...</p>
                 </div>
             );
         }
-        return isAuthenticated ? <Dashboard /> : <LoginScreen onLogin={handleLogin} />;
+        return isAuthenticated ? <Dashboard /> : <LoginScreen onLogin={handleLogin} metaAppId={META_APP_ID} />;
     };
-
-    const LoginScreen: React.FC<{ onLogin: () => void }> = ({ onLogin }) => (
-        <div className="flex flex-col items-center justify-center text-center p-8 min-h-[calc(100vh-80px)]">
-             <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl max-w-lg w-full">
-                <svg className="w-16 h-16 text-blue-600 dark:text-blue-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Bem-vindo ao Meta Ads Dashboard</h1>
-                <p className="text-gray-600 dark:text-gray-300 mb-8">Conecte sua conta do Meta para visualizar seus dados de performance e saldos.</p>
-                <button
-                    onClick={onLogin}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-105 duration-300 ease-in-out flex items-center justify-center gap-3"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="currentColor"><path d="M12 2.04c-5.52 0-10 4.48-10 10s4.48 10 10 10 10-4.48 10-10-4.48-10-10-10zm2.25 10.5h-2.25v6h-3v-6h-1.5v-2.5h1.5v-2c0-1.29.67-2.5 2.5-2.5h2.25v2.5h-1.5c-.28 0-.5.22-.5.5v1.5h2.25l-.25 2.5z"/></svg>
-                    Conectar com o Meta (Simulado)
-                </button>
-                <p className="mt-6 text-xs text-gray-500 dark:text-gray-400">
-                    O login real com o Meta está desativado neste ambiente de desenvolvimento devido a restrições de domínio.
-                </p>
-             </div>
-        </div>
-    );
 
     const Dashboard = () => (
          <main className="container mx-auto p-4 md:p-6 space-y-8">

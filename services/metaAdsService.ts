@@ -1,10 +1,41 @@
 import { AdAccount, KpiData, DataLevel } from '../types';
 
-// --- ARQUITETURA DE PRODUÇÃO ---
-// Em um aplicativo real, este arquivo não faria chamadas diretas para a API da Meta.
-// Em vez disso, ele faria chamadas para o seu próprio servidor backend (ex: /api/accounts).
-// O seu backend, então, faria a chamada segura para a API da Meta, adicionando a Chave Secreta
-// ou um Access Token de servidor, protegendo assim suas credenciais.
+// --- ARQUITETURA DE PRODUÇÃO - FLUXO DE AUTENTICAÇÃO OAUTH 2.0 ---
+//
+// O fluxo de dados em uma aplicação real e segura seria o seguinte:
+//
+// 1. FRONTEND: O usuário clica em "Conectar com o Meta".
+//    - O app redireciona o usuário para a URL de autorização da Meta, incluindo:
+//      - `client_id`: O seu App ID (público).
+//      - `redirect_uri`: A URL para onde a Meta deve enviar o usuário de volta (ex: https://dashboard.mindfulmarketing.com.br/).
+//      - `scope`: As permissões que o app está solicitando (ex: 'ads_read', 'read_insights').
+//
+// 2. META: O usuário vê a tela de permissão, aceita e é redirecionado de volta para a sua `redirect_uri`.
+//    - A Meta adiciona um `code` (código de autorização temporário) como parâmetro na URL.
+//
+// 3. FRONTEND: A página carrega e extrai o `code` da URL.
+//    - O frontend envia este `code` para o seu backend através de uma chamada de API segura (ex: POST /api/auth/meta).
+//
+// 4. BACKEND: O seu servidor recebe o `code`.
+//    - O backend faz uma chamada de servidor-para-servidor para a API da Meta, enviando:
+//      - `client_id`: Seu App ID.
+//      - `client_secret`: Sua Chave Secreta do App (MANTIDA EM SEGURANÇA NO BACKEND).
+//      - `code`: O código recebido do frontend.
+//    - A Meta verifica tudo e retorna um `access_token` de longa duração para o seu backend.
+//
+// 5. BACKEND: O backend armazena o `access_token` de forma segura, associado ao usuário.
+//    - Ele retorna uma resposta de sucesso para o frontend (ex: um cookie de sessão ou um token JWT).
+//
+// 6. FRONTEND: O frontend agora está "logado". Para buscar dados de anúncios:
+//    - Ele faz chamadas para o seu próprio backend (ex: GET /api/accounts).
+//    - O frontend NUNCA envia o `access_token` da Meta diretamente.
+//
+// 7. BACKEND: Ao receber uma chamada do frontend (ex: /api/accounts):
+//    - O backend recupera o `access_token` do usuário.
+//    - Ele faz a chamada para a API da Meta (Graph API), adicionando o `access_token` no header.
+//    - Ele recebe os dados da Meta, formata se necessário, e os envia de volta para o frontend.
+//
+// Este serviço simulado abaixo representa o passo 7, pulando todo o fluxo de autenticação.
 
 const adAccounts: AdAccount[] = [
   { id: 'act_101', name: 'E-commerce de Moda - Vendas', balance: 450.75, spendingLimit: 5000, amountSpent: 4549.25, currency: 'BRL' },
@@ -86,12 +117,10 @@ export const getAdAccounts = async (accessToken: string | null): Promise<AdAccou
          return Promise.reject(new Error("Authentication required."));
     }
     console.log("Fetching ad accounts with token...");
-    // Em uma implementação real, o 'accessToken' seria usado para chamar a API da Meta.
-    // Para a simulação, simplesmente retornamos os dados mocados.
+    // Em uma implementação real, o backend usaria o 'accessToken' para chamar a API da Meta.
     return fakeApiCall(adAccounts);
 };
 
-// Em um app real, o accessToken seria enviado ao seu backend no header 'Authorization'.
 export const getKpiData = (accessToken: string | null, accountId: string, level: DataLevel): Promise<KpiData[]> => {
      if (!accessToken) {
         return Promise.reject(new Error("Authentication required."));
