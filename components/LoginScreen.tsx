@@ -16,7 +16,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, metaAppId }) => {
     const isAppIdSet = metaAppId && metaAppId !== 'YOUR_META_APP_ID_HERE';
 
     // Constrói a URL de autorização real que seria usada
-    const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${metaAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=ads_read,read_insights`;
+    const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${metaAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=ads_read`;
 
     return (
         <div className="flex flex-col items-center justify-center text-center p-8 min-h-[calc(100vh-80px)]">
