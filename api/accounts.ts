@@ -12,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const fields = 'id,name,balance,spend_cap,amount_spent,currency,prepay_balance';
+        const fields = 'id,name,balance,spend_cap,amount_spent,currency,prepay_balance,funding_source_details';
         let allAccounts: any[] = [];
         let url = `https://graph.facebook.com/v19.0/me/adaccounts?fields=${fields}&limit=100&access_token=${accessToken}`;
 
@@ -37,21 +37,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         // Formata os dados da Meta para o tipo que nosso frontend espera.
         const formattedAccounts: AdAccount[] = allAccounts.map((acc: any) => {
+            const amountSpent = parseFloat(acc.amount_spent || '0') / 100;
+            const spendingLimit = parseFloat(acc.spend_cap || '0') / 100;
             let finalBalance: number;
-            // Para contas pré-pagas, o valor já vem na unidade monetária principal.
-            if (acc.prepay_balance && acc.prepay_balance.amount) {
+
+            // Contas pré-pagas (geralmente identificadas por prepay_balance ou tipo de fonte de pagamento)
+            const isPrepaid = acc.funding_source_details?.type === 'PREPAID' || (acc.prepay_balance && acc.prepay_balance.amount);
+
+            if (isPrepaid) {
+                // Para contas pré-pagas, o valor já vem na unidade monetária principal.
                 finalBalance = parseFloat(acc.prepay_balance.amount);
             } else {
-                // Para contas pós-pagas, o saldo vem em centavos e precisa ser dividido por 100.
-                finalBalance = parseFloat(acc.balance || '0') / 100;
+                // Para contas pós-pagas, o "saldo" mais útil é o limite restante.
+                // Se o limite for 0 (ilimitado), mostramos a dívida atual (balance) como um número negativo.
+                if (spendingLimit > 0) {
+                    finalBalance = spendingLimit - amountSpent;
+                } else {
+                    finalBalance = -(parseFloat(acc.balance || '0') / 100);
+                }
             }
 
             return {
                 id: acc.id,
                 name: acc.name,
                 balance: finalBalance,
-                spendingLimit: parseFloat(acc.spend_cap || '0') / 100, 
-                amountSpent: parseFloat(acc.amount_spent || '0') / 100,
+                spendingLimit: spendingLimit, 
+                amountSpent: amountSpent,
                 currency: acc.currency,
             };
         });

@@ -39,6 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!accountId || typeof accountId !== 'string' || !level || typeof level !== 'string' || !Object.values(DataLevel).includes(level as DataLevel)) {
         return res.status(400).json({ message: 'ID da conta e nível são obrigatórios.' });
     }
+    const typedLevel = level as DataLevel;
 
     const today = new Date();
     const fourteenDaysAgo = new Date();
@@ -50,8 +51,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     try {
-        const fields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,cost_per_action_type,ctr,cpc,cpm,campaign_id,adset_id,ad_id,campaign_name,adset_name,ad_name';
-        const levelParam = levelMap[level as DataLevel];
+        const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,cost_per_action_type,ctr,cpc,cpm';
+        let dynamicFields = '';
+
+        // Adiciona campos específicos do nível para evitar erros na API
+        switch (typedLevel) {
+            case DataLevel.CAMPAIGN:
+                dynamicFields = ',campaign_id,campaign_name';
+                break;
+            case DataLevel.AD_SET:
+                dynamicFields = ',adset_id,adset_name,campaign_name';
+                break;
+            case DataLevel.AD:
+                dynamicFields = ',ad_id,ad_name,adset_name,campaign_name';
+                break;
+        }
+        
+        const fields = baseFields + dynamicFields;
+        const levelParam = levelMap[typedLevel];
         
         let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&time_range=${JSON.stringify(dateRange)}&time_increment=1&limit=500&access_token=${accessToken}`;
         
@@ -86,13 +103,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             const results = resultAction?.value ?? '0';
             const costPerResult = costPerResultAction?.value ?? '0';
-            const entityId = item?.[`${levelParam}_id`] || (accountId as string);
+            
+            const entityId = item[`${levelParam}_id`] || accountId;
+            let entityName = item[`${levelParam}_name`];
+
+            if (!entityName) {
+                if (typedLevel === DataLevel.ACCOUNT) {
+                    entityName = `Resumo Diário`;
+                } else {
+                    entityName = `(Sem Nome - ID: ${entityId})`;
+                }
+            }
+
 
             return {
                 id: `${entityId}_${item.date_start}`,
                 entityId: entityId,
-                name: item?.[`${levelParam}_name`] || `Resumo Diário`,
-                level: level as DataLevel,
+                name: entityName,
+                level: typedLevel,
                 date: item.date_start,
                 amountSpent: parseFloat(item?.spend ?? '0'),
                 impressions: parseInt(item?.impressions ?? '0', 10),
