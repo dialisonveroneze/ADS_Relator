@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { AdAccount } from '../types';
 
 interface BalanceListProps {
@@ -8,8 +8,20 @@ interface BalanceListProps {
     isLoading: boolean;
 }
 
+type SortableKeys = keyof Pick<AdAccount, 'name' | 'id' | 'balance'>;
+
 const BalanceList: React.FC<BalanceListProps> = ({ accounts, selectedAccountId, onAccountSelect, isLoading }) => {
-    
+    const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({
+        key: 'name',
+        direction: 'ascending'
+    });
+
+    const headers: { label: string; key: SortableKeys }[] = [
+        { label: "Conta de Anúncio", key: "name" },
+        { label: "ID da Conta", key: "id" },
+        { label: "Saldo Atual", key: "balance" }
+    ];
+
     const formatCurrency = (value: number, currency: string) => {
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
     };
@@ -20,6 +32,41 @@ const BalanceList: React.FC<BalanceListProps> = ({ accounts, selectedAccountId, 
         if (isNoBalance) return 'text-red-500 font-semibold';
         if (isLowBalance) return 'text-orange-400 font-semibold';
         return 'text-gray-800 dark:text-white';
+    };
+    
+    const requestSort = (key: SortableKeys) => {
+        let direction: 'ascending' | 'descending' = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const sortedAccounts = useMemo(() => {
+        if (accounts.length === 0) return [];
+        let sortableAccounts = [...accounts];
+        if (sortConfig.key) {
+            sortableAccounts.sort((a, b) => {
+                const aValue = a[sortConfig.key];
+                const bValue = b[sortConfig.key];
+
+                if (typeof aValue === 'number' && typeof bValue === 'number') {
+                    if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+                    if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+                } else if (typeof aValue === 'string' && typeof bValue === 'string') {
+                    return sortConfig.direction === 'ascending'
+                        ? aValue.localeCompare(bValue)
+                        : bValue.localeCompare(aValue);
+                }
+                return 0;
+            });
+        }
+        return sortableAccounts;
+    }, [accounts, sortConfig]);
+
+    const getSortIndicator = (key: SortableKeys) => {
+        if (sortConfig.key !== key) return null;
+        return sortConfig.direction === 'ascending' ? '▲' : '▼';
     };
 
     const renderSkeletonRows = () => {
@@ -41,13 +88,21 @@ const BalanceList: React.FC<BalanceListProps> = ({ accounts, selectedAccountId, 
                 <table className="w-full text-left">
                     <thead className="border-b-2 border-gray-200 dark:border-gray-700">
                         <tr>
-                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300 uppercase">Conta de Anúncio</th>
-                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300 uppercase">ID da Conta</th>
-                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300 uppercase">Saldo Atual</th>
+                            {headers.map(header => (
+                                <th 
+                                    key={header.key} 
+                                    scope="col" 
+                                    className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300 uppercase cursor-pointer select-none transition-colors hover:bg-gray-100 dark:hover:bg-gray-600"
+                                    onClick={() => requestSort(header.key)}
+                                >
+                                    {header.label}
+                                    <span className="ml-1 text-blue-500 dark:text-blue-400 align-middle">{getSortIndicator(header.key)}</span>
+                                </th>
+                            ))}
                         </tr>
                     </thead>
                     <tbody>
-                        {isLoading ? renderSkeletonRows() : accounts.map(account => (
+                        {isLoading ? renderSkeletonRows() : sortedAccounts.map(account => (
                             <tr
                                 key={account.id}
                                 onClick={() => onAccountSelect(account)}
