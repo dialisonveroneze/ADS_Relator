@@ -86,7 +86,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timeRange = { since, until };
 
     try {
-        const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,cost_per_action_type,ctr,cpc,cpm';
+        // Removido 'cost_per_action_type' para maior robustez. O cálculo será feito manualmente.
+        const baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,actions,ctr,cpc,cpm';
         let dynamicFields = '';
 
         // Adiciona campos específicos do nível, incluindo IDs dos pais para obter os nomes
@@ -121,23 +122,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Formata os dados de insights para o tipo KpiData
         const formattedKpi: KpiData[] = (data.data || []).map((item: any) => {
             let resultAction = null;
-            let costPerResultAction = null;
 
-            if (item?.actions) {
+            // Encontra a ação de resultado mais relevante com segurança
+            if (Array.isArray(item?.actions)) {
                 for (const type of prioritizedActionTypes) {
                     resultAction = item.actions.find((a: any) => a.action_type === type);
                     if (resultAction) break;
                 }
             }
-            if (item?.cost_per_action_type) {
-                 for (const type of prioritizedActionTypes) {
-                    costPerResultAction = item.cost_per_action_type.find((a: any) => a.action_type === type);
-                    if (costPerResultAction) break;
-                }
-            }
 
-            const results = resultAction?.value ?? '0';
-            const costPerResult = costPerResultAction?.value ?? '0';
+            const amountSpent = parseFloat(item?.spend ?? '0');
+            const results = parseInt(resultAction?.value ?? '0', 10);
+            
+            // Calcula o custo por resultado manualmente para maior confiabilidade
+            const costPerResult = results > 0 ? parseFloat((amountSpent / results).toFixed(2)) : 0;
             
             const entityId = item[`${levelParam}_id`] || accountId;
             let entityName: string;
@@ -166,13 +164,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 name: entityName,
                 level: typedLevel,
                 date: item.date_start,
-                amountSpent: parseFloat(item?.spend ?? '0'),
+                amountSpent: amountSpent,
                 impressions: parseInt(item?.impressions ?? '0', 10),
                 reach: parseInt(item?.reach ?? '0', 10),
                 clicks: parseInt(item?.clicks ?? '0', 10),
                 linkClicks: parseInt(item?.inline_link_clicks ?? '0', 10),
-                results: parseInt(results, 10),
-                costPerResult: parseFloat(costPerResult),
+                results: results,
+                costPerResult: costPerResult,
                 ctr: parseFloat(item?.ctr ?? '0'),
                 cpc: parseFloat(item?.cpc ?? '0'),
                 cpm: parseFloat(item?.cpm ?? '0'),
