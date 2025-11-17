@@ -5,7 +5,7 @@ import BalanceCard from './components/BalanceCard';
 import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
-import { getAdAccounts, getKpiData } from './services/metaAdsService';
+import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
 import { AdAccount, KpiData, DataLevel } from './types';
 
 const chartMetrics = {
@@ -16,16 +16,9 @@ const chartMetrics = {
 };
 type ChartMetric = keyof typeof chartMetrics;
 
-// Em um projeto real com um processo de build (Vite, Create React App),
-// esta variável viria de um arquivo .env para segurança e flexibilidade.
-// Ex: const META_APP_ID = process.env.REACT_APP_META_APP_ID;
-const META_APP_ID = '897058925982042';
-
-
 const App: React.FC = () => {
     // Authentication State
-    const [accessToken, setAccessToken] = useState<string | null>(null);
-    const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
     
     // Dashboard State
     const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
@@ -36,65 +29,63 @@ const App: React.FC = () => {
     const [isLoadingKpis, setIsLoadingKpis] = useState<boolean>(false);
     const [isLoadingAccounts, setIsLoadingAccounts] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    
-    const handleLogin = () => {
-        setIsAuthenticating(true);
-        // Simula o fluxo OAuth: o usuário seria redirecionado para a Meta,
-        // faria o login e voltaria para o app com um código de autorização.
-        // O app então trocaria esse código por um access token no backend.
-        setTimeout(() => {
-            setAccessToken('SIMULATED_ACCESS_TOKEN');
-            setIsAuthenticating(false);
-        }, 1500);
-    };
 
-    const handleLogout = () => {
-        setAccessToken(null);
-    };
-    
-    const isAuthenticated = !!accessToken;
+    const handleAuthenticationError = useCallback(() => {
+        setIsAuthenticated(false);
+        setAdAccounts([]);
+        setSelectedAccount(null);
+        setKpiData([]);
+    }, []);
 
+    // Check authentication status on initial load
     useEffect(() => {
-        if (!accessToken) {
-             setAdAccounts([]);
-             setSelectedAccount(null);
-             setKpiData([]);
-             setError(null);
-             setSelectedLevel(DataLevel.ACCOUNT);
-            return;
-        }
-
-        const fetchAccounts = async () => {
+        const checkAuthStatus = async () => {
             setIsLoadingAccounts(true);
             setError(null);
             try {
-                const accounts = await getAdAccounts(accessToken);
+                const accounts = await getAdAccounts();
                 setAdAccounts(accounts);
                 if (accounts.length > 0) {
                     setSelectedAccount(accounts[0]);
                 }
-            } catch (err) {
-                setError("Falha ao buscar contas. Verifique sua conexão ou token.");
-                setAccessToken(null);
+                setIsAuthenticated(true);
+            } catch (err: any) {
+                if (err.message === 'Unauthorized') {
+                    handleAuthenticationError();
+                } else {
+                    setError("Falha ao verificar o status da autenticação.");
+                    setIsAuthenticated(false);
+                }
             } finally {
                 setIsLoadingAccounts(false);
             }
         };
-        fetchAccounts();
-    }, [accessToken]);
+        checkAuthStatus();
+    }, [handleAuthenticationError]);
+    
+    const handleLogout = async () => {
+        await logout();
+        handleAuthenticationError();
+        // Adiciona um parâmetro para evitar cache e forçar a verificação no servidor
+        window.location.href = `/?logged_out=true`;
+    };
 
     const fetchKpiData = useCallback(async () => {
-        if (!selectedAccount || !accessToken) return;
+        if (!selectedAccount || !isAuthenticated) return;
         setIsLoadingKpis(true);
         try {
-            const data = await getKpiData(accessToken, selectedAccount.id, selectedLevel);
+            const data = await getKpiData(selectedAccount.id, selectedLevel);
             setKpiData(data);
-        } catch (err) {
-             setError("Falha ao buscar os dados de KPI.");
+        } catch (err: any) {
+            if (err.message === 'Unauthorized') {
+                handleAuthenticationError();
+            } else {
+                setError("Falha ao buscar os dados de KPI.");
+            }
         } finally {
             setIsLoadingKpis(false);
         }
-    }, [selectedAccount, selectedLevel, accessToken]);
+    }, [selectedAccount, selectedLevel, isAuthenticated, handleAuthenticationError]);
 
     useEffect(() => {
         fetchKpiData();
@@ -102,7 +93,7 @@ const App: React.FC = () => {
     
     const aggregatedChartData = useMemo(() => {
         if (selectedLevel === DataLevel.ACCOUNT) {
-            return kpiData; // Data from service is already aggregated by day
+            return kpiData;
         }
         
         const dailyTotals: { [date: string]: KpiData } = {};
@@ -136,7 +127,7 @@ const App: React.FC = () => {
 
     const handleAccountSelect = (account: AdAccount) => {
         setSelectedAccount(account);
-        setSelectedLevel(DataLevel.ACCOUNT); // Reset to account level on new account selection
+        setSelectedLevel(DataLevel.ACCOUNT);
     };
 
     const LevelSelector: React.FC<{ disabled: boolean }> = ({ disabled }) => (
@@ -164,22 +155,24 @@ const App: React.FC = () => {
     );
 
     const AuthContent = () => {
-        if (isAuthenticating) {
+        if (isAuthenticated === null) {
             return (
                 <div className="flex flex-col items-center justify-center text-center p-8 min-h-[calc(100vh-80px)]">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                    <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Autenticando com a Meta...</p>
+                    <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Verificando sessão...</p>
                 </div>
             );
         }
-        return isAuthenticated ? <Dashboard /> : <LoginScreen onLogin={handleLogin} metaAppId={META_APP_ID} />;
+        return isAuthenticated ? <Dashboard /> : <LoginScreen />;
     };
 
     const Dashboard = () => (
          <main className="container mx-auto p-4 md:p-6 space-y-8">
             {error && (<div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative" role="alert"><strong className="font-bold">Ocorreu um erro: </strong><span className="block sm:inline">{error}</span></div>)}
             <BalanceList accounts={adAccounts} selectedAccountId={selectedAccount?.id || null} onAccountSelect={handleAccountSelect} isLoading={isLoadingAccounts}/>
-            {selectedAccount ? (
+            {isLoadingAccounts ? (
+                 <div className="text-center p-8"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div></div>
+            ) : selectedAccount ? (
                  <div>
                     <BalanceCard account={selectedAccount} />
                     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg space-y-4">
@@ -189,13 +182,13 @@ const App: React.FC = () => {
                     <LineChart data={aggregatedChartData} metric={chartMetric} label={chartMetrics[chartMetric].label} isLoading={isLoadingKpis} />
                     <KpiTable data={kpiData} isLoading={isLoadingKpis} />
                 </div>
-            ) : (!isLoadingAccounts && adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta de anúncio foi encontrada para este usuário.</p></div>))}
+            ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta de anúncio foi encontrada para este usuário.</p></div>))}
         </main>
     );
     
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-            <Header isAuthenticated={isAuthenticated} onLogout={handleLogout} />
+            <Header isAuthenticated={!!isAuthenticated} onLogout={handleLogout} />
             <AuthContent />
         </div>
     );
