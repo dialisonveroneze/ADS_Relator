@@ -15,28 +15,40 @@ const adAccounts: AdAccount[] = [
 
 const generateKpiData = (level: DataLevel, count: number, prefix: string): KpiData[] => {
     const data: KpiData[] = [];
-    const today = new Date().toISOString().split('T')[0];
-    for (let i = 1; i <= count; i++) {
-        const amountSpent = Math.random() * 200 + 50;
-        const impressions = Math.floor(Math.random() * 40000 + 10000);
-        const clicks = Math.floor(impressions * (Math.random() * 0.015 + 0.005));
-        const results = Math.floor(clicks * (Math.random() * 0.1 + 0.02));
-        data.push({
-            id: `${prefix}_${i}`,
-            name: `${level} ${i}`,
-            level: level,
-            date: today,
-            amountSpent: parseFloat(amountSpent.toFixed(2)),
-            impressions: impressions,
-            reach: Math.floor(impressions * (Math.random() * 0.2 + 0.7)),
-            clicks: clicks,
-            linkClicks: Math.floor(clicks * (Math.random() * 0.2 + 0.75)),
-            results: results > 0 ? results : 0,
-            costPerResult: results > 0 ? parseFloat((amountSpent / results).toFixed(2)) : 0,
-            ctr: impressions > 0 ? parseFloat(((clicks / impressions) * 100).toFixed(2)) : 0,
-            cpc: clicks > 0 ? parseFloat((amountSpent / clicks).toFixed(2)) : 0,
-            cpm: impressions > 0 ? parseFloat(((amountSpent / impressions) * 1000).toFixed(2)) : 0,
-        });
+    const baseDate = new Date();
+
+    for (let day = 13; day >= 0; day--) { // Generate data for the last 14 days
+        const date = new Date(baseDate);
+        date.setDate(baseDate.getDate() - day);
+        const dateString = date.toISOString().split('T')[0];
+
+        for (let i = 1; i <= count; i++) {
+            // Add some variation based on day to make chart look more real
+            const dayFactor = 1 - (day / 20); // slight upward trend
+            const randomFactor = Math.random() * 0.4 + 0.8; // +/- 20% randomness
+            
+            const amountSpent = (Math.random() * 100 + 20) * dayFactor * randomFactor;
+            const impressions = Math.floor((Math.random() * 20000 + 5000) * dayFactor * randomFactor);
+            const clicks = Math.floor(impressions * (Math.random() * 0.015 + 0.005));
+            const results = Math.floor(clicks * (Math.random() * 0.1 + 0.02));
+
+            data.push({
+                id: `${prefix}_${i}_${dateString}`,
+                name: `${level} ${i}`,
+                level: level,
+                date: dateString,
+                amountSpent: parseFloat(amountSpent.toFixed(2)),
+                impressions: impressions,
+                reach: Math.floor(impressions * (Math.random() * 0.2 + 0.7)),
+                clicks: clicks,
+                linkClicks: Math.floor(clicks * (Math.random() * 0.2 + 0.75)),
+                results: results > 0 ? results : 0,
+                costPerResult: results > 0 ? parseFloat((amountSpent / results).toFixed(2)) : 0,
+                ctr: impressions > 0 ? parseFloat(((clicks / impressions) * 100).toFixed(2)) : 0,
+                cpc: clicks > 0 ? parseFloat((amountSpent / clicks).toFixed(2)) : 0,
+                cpm: impressions > 0 ? parseFloat(((amountSpent / impressions) * 1000).toFixed(2)) : 0,
+            });
+        }
     }
     return data;
 };
@@ -92,13 +104,17 @@ export const getKpiData = (accessToken: string | null, accountId: string, level:
         const accountSummary = adAccounts.find(acc => acc.id === accountId);
         if (!accountSummary) return fakeApiCall([]);
 
-        const totals: KpiData = {
-            id: accountId, name: accountSummary.name, level: DataLevel.ACCOUNT, date: new Date().toISOString().split('T')[0],
-            amountSpent: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0, results: 0,
-            costPerResult: 0, ctr: 0, cpc: 0, cpm: 0
-        };
+        const dailyTotals: { [date: string]: KpiData } = {};
 
         accountData.forEach(item => {
+            if (!dailyTotals[item.date]) {
+                dailyTotals[item.date] = {
+                    id: `${accountId}_${item.date}`, name: `Resumo Diário - ${item.date}`, level: DataLevel.ACCOUNT, date: item.date,
+                    amountSpent: 0, impressions: 0, reach: 0, clicks: 0, linkClicks: 0, results: 0,
+                    costPerResult: 0, ctr: 0, cpc: 0, cpm: 0
+                };
+            }
+            const totals = dailyTotals[item.date];
             totals.amountSpent += item.amountSpent;
             totals.impressions += item.impressions;
             totals.reach += item.reach;
@@ -107,12 +123,15 @@ export const getKpiData = (accessToken: string | null, accountId: string, level:
             totals.results += item.results;
         });
 
-        totals.costPerResult = totals.results > 0 ? parseFloat((totals.amountSpent / totals.results).toFixed(2)) : 0;
-        totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
-        totals.cpc = totals.clicks > 0 ? parseFloat((totals.amountSpent / totals.clicks).toFixed(2)) : 0;
-        totals.cpm = totals.impressions > 0 ? parseFloat(((totals.amountSpent / totals.impressions) * 1000).toFixed(2)) : 0;
-        
-        return fakeApiCall([totals]);
+        Object.values(dailyTotals).forEach(totals => {
+            totals.costPerResult = totals.results > 0 ? parseFloat((totals.amountSpent / totals.results).toFixed(2)) : 0;
+            totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
+            totals.cpc = totals.clicks > 0 ? parseFloat((totals.amountSpent / totals.clicks).toFixed(2)) : 0;
+            totals.cpm = totals.impressions > 0 ? parseFloat(((totals.amountSpent / totals.impressions) * 1000).toFixed(2)) : 0;
+        });
+
+        const sortedTotals = Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
+        return fakeApiCall(sortedTotals);
     }
     
     const filteredData = accountData.filter(item => item.level === level);
