@@ -12,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const fields = 'id,name,balance,spend_cap,amount_spent,currency';
+        const fields = 'id,name,balance,spend_cap,amount_spent,currency,prepay_balance';
         let allAccounts: any[] = [];
         let url = `https://graph.facebook.com/v19.0/me/adaccounts?fields=${fields}&limit=100&access_token=${accessToken}`;
 
@@ -36,14 +36,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         
         // Formata os dados da Meta para o tipo que nosso frontend espera.
-        const formattedAccounts: AdAccount[] = allAccounts.map((acc: any) => ({
-            id: acc.id,
-            name: acc.name,
-            balance: parseFloat(acc.balance || '0') / 100, // A API retorna o saldo em centavos
-            spendingLimit: parseFloat(acc.spend_cap || '0') / 100, // Limite também em centavos
-            amountSpent: parseFloat(acc.amount_spent || '0') / 100, // Gasto também em centavos
-            currency: acc.currency,
-        }));
+        const formattedAccounts: AdAccount[] = allAccounts.map((acc: any) => {
+            // Lógica para determinar o saldo correto: prioriza o saldo pré-pago se existir.
+            let finalBalance = 0;
+            // A API de pré-pago retorna um objeto com 'amount' e 'currency'
+            if (acc.prepay_balance && acc.prepay_balance.amount) {
+                finalBalance = parseFloat(acc.prepay_balance.amount);
+            } else {
+                // O saldo normal vem em centavos como uma string
+                finalBalance = parseFloat(acc.balance || '0');
+            }
+
+            return {
+                id: acc.id,
+                name: acc.name,
+                balance: finalBalance / 100, // Converte de centavos para a unidade principal
+                spendingLimit: parseFloat(acc.spend_cap || '0') / 100, 
+                amountSpent: parseFloat(acc.amount_spent || '0') / 100,
+                currency: acc.currency,
+            };
+        });
 
         res.status(200).json(formattedAccounts);
 
