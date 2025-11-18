@@ -44,3 +44,12 @@ export const DATA_LEVEL_LABELS: Record<DataLevel, string> = {
 };
 
 export type DateRangeOption = 'last_7_days' | 'last_14_days' | 'last_30_days' | 'this_month' | 'last_month';
+
+// Subscription Types
+export type SubscriptionStatus = 'trial_active' | 'active' | 'expired';
+
+export interface UserSubscription {
+  status: SubscriptionStatus;
+  daysRemaining?: number; // Only for trial
+  trialEndDate?: string;
+}
