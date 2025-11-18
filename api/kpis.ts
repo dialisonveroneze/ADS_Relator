@@ -30,6 +30,7 @@ export interface KpiData {
   costPerInlineLinkClick: number;
   results: number;
   costPerResult: number;
+  isPeriodTotal?: boolean;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -59,7 +60,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const levelParam = typedLevel;
     
     // Define fields based on level
-    // Added actions to calculate results and objective to determine WHAT the result is
     let fieldsList = ['spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks', 'actions', 'date_start', 'date_stop', 'objective'];
     
     switch (typedLevel) {
@@ -82,8 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Helper function to format date as YYYY-MM-DD
     const formatDate = (date: Date) => date.toISOString().split('T')[0];
 
-    // Calculate time_range manually to ensure compatibility with time_increment=1
-    // Using time_range instead of date_preset fixes issues with monthly views returning empty data when broken down by day.
+    // Calculate time_range manually
     const today = new Date();
     let since: string;
     let until: string = formatDate(today);
@@ -113,16 +112,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             break;
         }
         case 'last_month': {
-            // First day of previous month
             const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-            // Last day of previous month (day 0 of current month)
             const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
             since = formatDate(firstDay);
             until = formatDate(lastDay);
             break;
         }
         default: {
-            // Default fallback
             const d = new Date(today);
             d.setDate(today.getDate() - 14);
             since = formatDate(d);
@@ -160,140 +156,132 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     try {
-        
-        let allInsights: any[] = [];
-        
-        // Always try to fetch daily breakdown first to populate the chart
-        // Since we are using explicit time_range, this should work for 'this_month' and 'last_month' too.
-        try {
-            allInsights = await fetchInsights(true);
-        } catch (err: any) {
-            if (err.code === 190) throw err; // Auth error, fail immediately
-            console.warn("Daily fetch failed, falling back to aggregate.", err.message);
-        }
+        // Execute both requests in parallel:
+        // 1. Daily breakdown (for Chart)
+        // 2. Summary (for Table - correct totals)
+        const [dailyRaw, summaryRaw] = await Promise.all([
+             fetchInsights(true).catch(e => { 
+                 console.warn("Daily fetch failed or empty", e.message); 
+                 return []; 
+             }),
+             fetchInsights(false).catch(e => { 
+                 console.warn("Summary fetch failed", e.message); 
+                 return []; 
+             })
+        ]);
 
-        // FALLBACK / AGGREGATE MODE
-        // If daily fetch returned no data (or failed silently), try fetching without breakdown to at least show the table totals.
-        if (allInsights.length === 0) {
-            console.log("Fetching aggregate data (fallback)...");
-            try {
-                allInsights = await fetchInsights(false);
-            } catch (retryErr) {
-                console.error("Fallback fetch failed", retryErr);
-            }
-        }
-
-        if (allInsights.length === 0) {
+        if (dailyRaw.length === 0 && summaryRaw.length === 0) {
              return res.status(200).json([]);
         }
 
-        const formattedKpi: KpiData[] = allInsights.map((item: any) => {
-            let entityId: string;
-            let entityName: string;
-            
-            const safeAccountId = item.account_id || accountId;
+        const processData = (dataItems: any[], isPeriodTotal: boolean): KpiData[] => {
+            return dataItems.map((item: any) => {
+                let entityId: string;
+                let entityName: string;
+                
+                const safeAccountId = item.account_id || accountId;
 
-            switch (typedLevel) {
-                case DataLevel.ACCOUNT:
-                    entityId = safeAccountId;
-                    entityName = item.account_name || "Resumo da Conta";
-                    break;
-                case DataLevel.CAMPAIGN:
-                    entityId = item.campaign_id || "unknown_campaign";
-                    entityName = item.campaign_name || "(Campanha Desconhecida)";
-                    break;
-                case DataLevel.AD_SET:
-                    entityId = item.adset_id || "unknown_adset";
-                    entityName = item.adset_name || "(Grupo Desconhecido)";
-                    break;
-                case DataLevel.AD:
-                    entityId = item.ad_id || "unknown_ad";
-                    entityName = item.ad_name || "(Anúncio Desconhecido)";
-                    break;
-                default:
-                     entityId = safeAccountId;
-                     entityName = "Desconhecido";
-            }
-            
-            const spend = parseFloat(item?.spend ?? '0');
-            const impressions = parseInt(item?.impressions ?? '0', 10);
-            const reach = parseInt(item?.reach ?? '0', 10);
-            const clicks = parseInt(item?.clicks ?? '0', 10);
-            const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
-            
-            // ----------- DYNAMIC RESULTS LOGIC -----------
-            let resultsCount = 0;
-            const objective = item.objective; // e.g., OUTCOME_AWARENESS, OUTCOME_TRAFFIC, OUTCOME_LEADS
-
-            // 1. Awareness Campaigns: Result = Reach
-            if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
-                resultsCount = reach;
-            } 
-            // 2. Traffic Campaigns: Result = Link Clicks
-            else if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
-                resultsCount = inlineLinkClicks;
-            } 
-            // 3. Conversion/Engagement/Sales Campaigns: Result = Specific Actions
-            else {
-                const actions = item.actions || [];
-                
-                // IMPORTANT: We only use the "Aggregate" keys or distinct unique keys to avoid double counting.
-                // For example, 'purchase' usually sums up 'offsite_conversion.fb_pixel_purchase' + others.
-                // If we include both, we double count.
-                
-                const validActionTypes = [
-                    // Standard Events (Aggregates)
-                    'purchase', 
-                    'lead', 
-                    'complete_registration', 
-                    'submit_application', 
-                    'schedule', 
-                    'contact',
-                    'mobile_app_install',
-                    
-                    // Messaging Conversions (Specific key for "Conversations Started" attribute)
-                    // We exclude the generic 'messaging_conversation_started_7d' if 'onsite...' is present to avoid duplicates,
-                    // but usually 'onsite_conversion.messaging_conversation_started_7d' is the one attributed to ads.
-                    'onsite_conversion.messaging_conversation_started_7d', 
-                ];
-                
-                if (Array.isArray(actions)) {
-                    actions.forEach((action: any) => {
-                        if (validActionTypes.includes(action.action_type)) {
-                            resultsCount += parseFloat(action.value);
-                        }
-                    });
+                switch (typedLevel) {
+                    case DataLevel.ACCOUNT:
+                        entityId = safeAccountId;
+                        entityName = item.account_name || "Resumo da Conta";
+                        break;
+                    case DataLevel.CAMPAIGN:
+                        entityId = item.campaign_id || "unknown_campaign";
+                        entityName = item.campaign_name || "(Campanha Desconhecida)";
+                        break;
+                    case DataLevel.AD_SET:
+                        entityId = item.adset_id || "unknown_adset";
+                        entityName = item.adset_name || "(Grupo Desconhecido)";
+                        break;
+                    case DataLevel.AD:
+                        entityId = item.ad_id || "unknown_ad";
+                        entityName = item.ad_name || "(Anúncio Desconhecido)";
+                        break;
+                    default:
+                         entityId = safeAccountId;
+                         entityName = "Desconhecido";
                 }
-            }
-            
-            // Calculate rates locally for the row
-            const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
-            const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-            const cpc = clicks > 0 ? spend / clicks : 0;
-            const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
-            const costPerResult = resultsCount > 0 ? spend / resultsCount : 0;
-            
-            return {
-                id: `${entityId}_${item.date_start}_${Math.random()}`, // Unique Key
-                entityId: entityId,
-                name: entityName,
-                level: typedLevel,
-                date: item.date_start, // YYYY-MM-DD
-                amountSpent: spend,
-                impressions: impressions,
-                reach: reach,
-                clicks: clicks,
-                inlineLinkClicks: inlineLinkClicks,
-                cpm: cpm,
-                ctr: ctr,
-                cpc: cpc,
-                costPerInlineLinkClick: costPerInlineLinkClick,
-                results: resultsCount,
-                costPerResult: costPerResult
-            };
-        });
+                
+                const spend = parseFloat(item?.spend ?? '0');
+                const impressions = parseInt(item?.impressions ?? '0', 10);
+                const reach = parseInt(item?.reach ?? '0', 10);
+                const clicks = parseInt(item?.clicks ?? '0', 10);
+                const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
+                
+                // ----------- DYNAMIC RESULTS LOGIC -----------
+                let resultsCount = 0;
+                const objective = item.objective;
 
-        res.status(200).json(formattedKpi);
+                if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
+                    resultsCount = reach;
+                } 
+                else if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
+                    resultsCount = inlineLinkClicks;
+                } 
+                else {
+                    const actions = item.actions || [];
+                    
+                    const validActionTypes = [
+                        'purchase', 
+                        'lead', 
+                        'complete_registration', 
+                        'submit_application', 
+                        'schedule', 
+                        'contact',
+                        'mobile_app_install',
+                        'onsite_conversion.messaging_conversation_started_7d', 
+                    ];
+                    
+                    if (Array.isArray(actions)) {
+                        actions.forEach((action: any) => {
+                            if (validActionTypes.includes(action.action_type)) {
+                                resultsCount += parseFloat(action.value);
+                            }
+                        });
+                    }
+                }
+                
+                const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
+                const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+                const cpc = clicks > 0 ? spend / clicks : 0;
+                const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
+                const costPerResult = resultsCount > 0 ? spend / resultsCount : 0;
+                
+                // Generate a unique ID. 
+                // For Summary data: entityId
+                // For Daily data: entityId + date
+                const uniqueId = isPeriodTotal 
+                    ? `${entityId}_summary`
+                    : `${entityId}_${item.date_start}`;
+
+                return {
+                    id: uniqueId,
+                    entityId: entityId,
+                    name: entityName,
+                    level: typedLevel,
+                    date: item.date_start, // YYYY-MM-DD
+                    amountSpent: spend,
+                    impressions: impressions,
+                    reach: reach,
+                    clicks: clicks,
+                    inlineLinkClicks: inlineLinkClicks,
+                    cpm: cpm,
+                    ctr: ctr,
+                    cpc: cpc,
+                    costPerInlineLinkClick: costPerInlineLinkClick,
+                    results: resultsCount,
+                    costPerResult: costPerResult,
+                    isPeriodTotal: isPeriodTotal
+                };
+            });
+        };
+
+        const dailyFormatted = processData(dailyRaw, false);
+        const summaryFormatted = processData(summaryRaw, true);
+
+        // Return combined dataset
+        res.status(200).json([...dailyFormatted, ...summaryFormatted]);
 
     } catch (error: any) {
         console.error(`Erro interno KPI:`, error);

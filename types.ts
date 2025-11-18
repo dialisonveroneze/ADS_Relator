@@ -25,6 +25,7 @@ export interface KpiData {
   costPerInlineLinkClick: number;
   results: number;
   costPerResult: number;
+  isPeriodTotal?: boolean;
 }
 
 export enum DataLevel {

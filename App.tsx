@@ -107,12 +107,18 @@ const App: React.FC = () => {
     }, [fetchKpiData]);
     
     const aggregatedChartData = useMemo(() => {
+        // For charts, we ONLY want daily breakdowns, not the period summaries
+        const dailyData = kpiData.filter(d => !d.isPeriodTotal);
+
         if (selectedLevel === DataLevel.ACCOUNT) {
-            return kpiData;
+            // Account level already comes sorted by date from API logic usually, but sort to be safe
+            return dailyData.sort((a, b) => a.date.localeCompare(b.date));
         }
         
+        // For levels like Campaign/AdSet, dailyData has multiple rows per day (one per entity).
+        // We must aggregate them by date to show the TOTAL trend line on the chart.
         const dailyTotals: { [date: string]: KpiData } = {};
-        kpiData.forEach(item => {
+        dailyData.forEach(item => {
             if (!dailyTotals[item.date]) {
                 dailyTotals[item.date] = {
                     id: item.date, entityId: item.date, name: `Resumo - ${item.date}`, level: selectedLevel, date: item.date,
@@ -124,7 +130,7 @@ const App: React.FC = () => {
             const totals = dailyTotals[item.date];
             totals.amountSpent += item.amountSpent;
             totals.impressions += item.impressions;
-            totals.reach += item.reach; 
+            totals.reach += item.reach; // Note: Summing reach here is visually approximate for charts, but technically overlapping. 
             totals.clicks += item.clicks;
             totals.inlineLinkClicks += item.inlineLinkClicks;
             totals.results += item.results;
@@ -145,12 +151,29 @@ const App: React.FC = () => {
     const tableData = useMemo(() => {
         if (kpiData.length === 0) return [];
         
+        // If selected level is ACCOUNT, we usually want to see the day-by-day breakdown in the table
+        // matching the chart.
         if (selectedLevel === DataLevel.ACCOUNT) {
-            return kpiData.map(d => ({ ...d, name: new Date(d.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }));
+            return kpiData
+                .filter(d => !d.isPeriodTotal)
+                .map(d => ({ ...d, name: new Date(d.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }));
         }
         
+        // For Campaign/AdSet/Ad levels, we want the "Period Summary" rows.
+        // We use the data where isPeriodTotal is true. This data comes directly from Meta with correct Reach/Result deduplication.
+        const summaryData = kpiData.filter(d => d.isPeriodTotal);
+        
+        // If for some reason summary is missing but we have daily data (fallback case), we aggregate manually.
+        // But based on new API logic, summaryData should be present.
+        if (summaryData.length > 0) {
+            return summaryData;
+        }
+
+        // Fallback manual aggregation (only runs if API fails to return summary)
         const aggregated: { [id: string]: KpiData } = {};
         kpiData.forEach(item => {
+            if (item.isPeriodTotal) return; // Skip summary items if we are aggregating daily manually
+            
             if (!aggregated[item.entityId]) {
                 aggregated[item.entityId] = {
                     id: item.entityId,
