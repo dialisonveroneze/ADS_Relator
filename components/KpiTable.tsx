@@ -33,7 +33,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
     const formatPercent = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2 }).format(value / 100);
 
-    // ORDEM DEFINITIVA DAS COLUNAS
+    // ORDEM DEFINITIVA DAS COLUNAS - SOLICITAÇÃO USUÁRIO
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
