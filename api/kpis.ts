@@ -35,10 +35,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const typedLevel = level as DataLevel;
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
     
-    // The API level parameter now matches our enum directly (account, campaign, adset, ad)
+    // The API level parameter now matches our enum directly
     const levelParam = typedLevel;
     
-    // Define fields based on level to avoid requesting invalid fields for the aggregation level
+    // Define fields based on level
     let fieldsList = ['spend', 'impressions', 'date_start', 'date_stop'];
     
     switch (typedLevel) {
@@ -58,17 +58,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const fields = fieldsList.join(',');
 
-    // Helper function to fetch data from Meta, handling pagination
-    const fetchInsights = async (timeQuery: string, enableBreakdown: boolean) => {
+    // Helper function to fetch data from Meta
+    const fetchInsights = async (preset: string, enableBreakdown: boolean) => {
         let allData: any[] = [];
-        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}${timeQuery}${enableBreakdown ? '&time_increment=1' : ''}&limit=100&access_token=${accessToken}`;
+        
+        // CRITICAL FIX: Filter to ONLY return rows with impressions > 0.
+        // This prevents the API from returning pages of "empty" data for paused/deleted ads,
+        // which causes timeouts and empty reports.
+        const filtering = [{ field: 'impressions', operator: 'GREATER_THAN', value: 0 }];
+        const filterParam = `&filtering=${encodeURIComponent(JSON.stringify(filtering))}`;
+        
+        // We use date_preset for everything now as it is safer than manual time_range calculations regarding timezones.
+        // We enable time_increment=1 only for short ranges (last_X_days) to populate the chart.
+        // For monthly presets, we disable it to prevent the known API bug returning empty lists.
+        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?` +
+                  `level=${levelParam}` +
+                  `&fields=${fields}` +
+                  `&date_preset=${preset}` +
+                  `${enableBreakdown ? '&time_increment=1' : ''}` +
+                  `${filterParam}` + 
+                  `&limit=100&access_token=${accessToken}`;
 
         while (url) {
             const response = await fetch(url);
             const data = await response.json();
 
             if (data.error) {
-                 // Propagate error to be handled by the caller
                  throw data.error;
             }
 
@@ -82,60 +97,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     try {
-        let timeQuery = '';
-        let shouldBreakdown = false;
+        const preset = datePresetMap[dateRange];
         
-        const today = new Date();
-        const formatDate = (d: Date) => d.toISOString().split('T')[0];
-
-        // STRATEGY: 
-        // 1. For "This Month" / "Last Month", use date_preset and DISABLE breakdown. 
-        //    Mixing presets + time_increment often causes empty data returns in Meta API v19+.
-        // 2. For "Last X Days", use explicit time_range and ENABLE breakdown.
-        //    Explicit ranges are more robust for granular data.
-
-        if (['this_month', 'last_month'].includes(dateRange)) {
-             timeQuery = `&date_preset=${datePresetMap[dateRange]}`;
-             shouldBreakdown = false; 
-        } else {
-             const end = new Date();
-             const start = new Date();
-             
-             // Note: We calculate dates in UTC (Server time). 
-             // Ideally, we should know the Ad Account timezone, but this is a robust approximation.
-             if (dateRange === 'last_7_days') start.setDate(today.getDate() - 7);
-             else if (dateRange === 'last_14_days') start.setDate(today.getDate() - 14);
-             else if (dateRange === 'last_30_days') start.setDate(today.getDate() - 30);
-             
-             const rangeJSON = JSON.stringify({ since: formatDate(start), until: formatDate(end) });
-             timeQuery = `&time_range=${encodeURIComponent(rangeJSON)}`;
-             shouldBreakdown = true;
-        }
-
+        // We only try to breakdown by day if it is NOT a monthly preset.
+        // "Last X Days" presets work fine with time_increment=1.
+        // "This/Last Month" do NOT work fine with time_increment=1 (API bug).
+        const tryDailyBreakdown = !['this_month', 'last_month'].includes(dateRange);
+        
         let allInsights: any[] = [];
 
-        try {
-            // Attempt 1: Fetch with the preferred strategy (likely with breakdown for days)
-            allInsights = await fetchInsights(timeQuery, shouldBreakdown);
-        } catch (err: any) {
-            // If it's an Auth error (190), stop immediately.
-            if (err.code === 190) throw err;
-            
-            // If it's another error and we were trying to breakdown, log and fall through to retry
-            console.warn("Initial fetch failed, attempting fallback.", err.message);
+        if (tryDailyBreakdown) {
+            try {
+                // Attempt 1: Get daily data for the chart
+                allInsights = await fetchInsights(preset, true);
+            } catch (err: any) {
+                if (err.code === 190) throw err; // Auth error, fail immediately
+                console.warn("Daily fetch failed, falling back to aggregate.", err.message);
+            }
         }
 
-        // FAILSAFE / FALLBACK:
-        // If the first attempt returned NO DATA (empty array) AND we were trying to get a daily breakdown,
-        // it's possible the API is strict about limits or low-volume data.
-        // We try again WITHOUT breakdown to ensure the user at least sees the TOTALS in the table.
-        if (allInsights.length === 0 && shouldBreakdown) {
-            console.log("Daily breakdown returned empty. Retrying with aggregate data...");
+        // FALLBACK / AGGREGATE MODE
+        // If daily fetch failed OR returned empty (possible strict filtering) OR we skipped it (monthly mode):
+        // We fetch the total aggregate data. 
+        // This ensures the TABLE always has data, even if the chart (daily) is empty.
+        if (allInsights.length === 0) {
+            console.log("Fetching aggregate data (fallback)...");
             try {
-                allInsights = await fetchInsights(timeQuery, false);
+                allInsights = await fetchInsights(preset, false);
             } catch (retryErr) {
-                console.error("Fallback fetch also failed", retryErr);
-                // If fallback fails, we just return the empty array or the previous error state
+                console.error("Fallback fetch failed", retryErr);
             }
         }
 
@@ -146,8 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const formattedKpi: KpiData[] = allInsights.map((item: any) => {
             let entityId: string;
             let entityName: string;
-
-            // Fallback ID logic
+            
             const safeAccountId = item.account_id || accountId;
 
             switch (typedLevel) {
@@ -156,20 +145,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     entityName = item.account_name || "Resumo da Conta";
                     break;
                 case DataLevel.CAMPAIGN:
-                    entityId = item.campaign_id || `camp_${Math.random().toString(36).substr(2, 9)}`;
-                    entityName = item.campaign_name || "(Campanha sem nome)";
+                    entityId = item.campaign_id || "unknown_campaign";
+                    entityName = item.campaign_name || "(Campanha Desconhecida)";
                     break;
                 case DataLevel.AD_SET:
-                    entityId = item.adset_id || `adset_${Math.random().toString(36).substr(2, 9)}`;
-                    entityName = `${item.campaign_name || "?"} > ${item.adset_name || "(Grupo sem nome)"}`;
+                    entityId = item.adset_id || "unknown_adset";
+                    entityName = item.adset_name || "(Grupo Desconhecido)";
                     break;
                 case DataLevel.AD:
-                    entityId = item.ad_id || `ad_${Math.random().toString(36).substr(2, 9)}`;
-                    entityName = `${item.campaign_name || "?"} > ${item.adset_name || "?"} > ${item.ad_name || "(Anúncio sem nome)"}`;
+                    entityId = item.ad_id || "unknown_ad";
+                    entityName = item.ad_name || "(Anúncio Desconhecido)";
                     break;
                 default:
                      entityId = safeAccountId;
-                     entityName = "(Desconhecido)";
+                     entityName = "Desconhecido";
             }
             
             const spend = parseFloat(item?.spend ?? '0');
@@ -177,11 +166,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
             
             return {
-                id: `${entityId}_${item.date_start}`, // Unique ID for React key
+                id: `${entityId}_${item.date_start}_${Math.random()}`, // Unique Key
                 entityId: entityId,
                 name: entityName,
                 level: typedLevel,
-                date: item.date_start,
+                date: item.date_start, // YYYY-MM-DD
                 amountSpent: spend,
                 impressions: impressions,
                 cpm: cpm,
@@ -191,7 +180,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.status(200).json(formattedKpi);
 
     } catch (error: any) {
-        console.error(`Erro interno ao buscar KPIs para ${accountId}:`, error);
+        console.error(`Erro interno KPI:`, error);
         if (error.code === 190) {
              return res.status(401).json({ message: 'Token de acesso inválido ou expirado.' });
         }
