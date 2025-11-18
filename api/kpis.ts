@@ -20,6 +20,33 @@ const datePresetMap: Record<DateRangeOption, string> = {
     'last_month': 'last_month',
 };
 
+// Constrói a lista de campos dinamicamente com base no nível,
+// garantindo que apenas campos válidos sejam solicitados.
+const getFieldsForLevel = (level: DataLevel): string => {
+    const baseFields = ['spend', 'impressions'];
+    let entityFields: string[] = [];
+
+    switch (level) {
+        case DataLevel.ACCOUNT:
+            // Para o nível da conta, os campos base são suficientes.
+            // A API já retorna account_id por padrão neste nível.
+            break;
+        case DataLevel.CAMPAIGN:
+            entityFields = ['campaign_id', 'campaign_name'];
+            break;
+        case DataLevel.AD_SET:
+            // Pedimos o nome da campanha para construir o nome hierárquico
+            entityFields = ['campaign_name', 'adset_id', 'adset_name'];
+            break;
+        case DataLevel.AD:
+             // Pedimos os nomes dos pais para construir o nome hierárquico
+            entityFields = ['campaign_name', 'adset_name', 'ad_id', 'ad_name'];
+            break;
+    }
+    return [...baseFields, ...entityFields].join(',');
+};
+
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
     const accessToken = cookies.meta_token;
@@ -37,14 +64,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
     const datePreset = datePresetMap[dateRange];
     const levelParam = levelMap[typedLevel];
+    const fields = getFieldsForLevel(typedLevel);
 
     try {
-        // SOLUÇÃO ROBUSTA:
-        // Solicitamos um superconjunto de todos os campos de identificação possíveis.
-        // A API da Meta ignora os campos que não são aplicáveis ao `level` solicitado,
-        // tornando esta abordagem muito mais estável do que construir a lista de campos dinamicamente.
-        const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions';
-        
         const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
         
         const metaResponse = await fetch(url);
@@ -58,30 +80,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
         }
         
-        const formattedKpi: KpiData[] = (data.data || []).map((item: any) => {
+        if (!data.data) {
+             console.warn("API da Meta retornou sucesso mas sem dados (data.data está ausente).", { accountId, level, dateRange });
+             return res.status(200).json([]);
+        }
+
+        const formattedKpi: KpiData[] = data.data.map((item: any) => {
             let entityId: string;
             let entityName: string;
 
             switch (typedLevel) {
                 case DataLevel.ACCOUNT:
                     entityId = item.account_id;
-                    entityName = `Resumo Diário`;
+                    entityName = "Resumo Diário";
                     break;
                 case DataLevel.CAMPAIGN:
                     entityId = item.campaign_id;
-                    entityName = item.campaign_name || `(Campanha sem nome)`;
+                    entityName = item.campaign_name || "(Campanha sem nome)";
                     break;
                 case DataLevel.AD_SET:
                     entityId = item.adset_id;
-                    entityName = item.adset_name || `(Grupo sem nome)`;
+                    entityName = `${item.campaign_name || "(?)"} > ${item.adset_name || "(Grupo sem nome)"}`;
                     break;
                 case DataLevel.AD:
                     entityId = item.ad_id;
-                    entityName = item.ad_name || `(Anúncio sem nome)`;
+                    entityName = `${item.campaign_name || "(?)"} > ${item.adset_name || "(?)"} > ${item.ad_name || "(Anúncio sem nome)"}`;
                     break;
                 default:
                      entityId = item.account_id || 'unknown';
-                     entityName = `(Desconhecido)`;
+                     entityName = "(Desconhecido)";
             }
             
             const spend = parseFloat(item?.spend ?? '0');
