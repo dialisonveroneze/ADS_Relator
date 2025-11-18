@@ -6,11 +6,13 @@ interface KpiTableProps {
     data: KpiData[];
     isLoading: boolean;
     currency: string;
+    selectedEntityId?: string | null;
+    onRowClick?: (entityId: string) => void;
 }
 
 type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date' | 'entityId'>;
 
-const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
+const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selectedEntityId, onRowClick }) => {
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({
         key: 'amountSpent',
         direction: 'descending'
@@ -171,7 +173,17 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
                         </thead>
                         <tbody>
                             {isLoading ? renderSkeletonRows() : sortedData.map(item => (
-                                <tr key={item.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <tr 
+                                    key={item.id} 
+                                    onClick={() => onRowClick && onRowClick(item.entityId)}
+                                    className={`border-b border-gray-200 dark:border-gray-700 transition-colors duration-200 
+                                        ${onRowClick ? 'cursor-pointer' : ''}
+                                        ${selectedEntityId === item.entityId 
+                                            ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-500' 
+                                            : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                        }
+                                    `}
+                                >
                                     <td className="py-3 px-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{item.name}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.amountSpent)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.impressions)}</td>

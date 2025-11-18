@@ -43,6 +43,9 @@ const App: React.FC = () => {
     const [isLoadingKpis, setIsLoadingKpis] = useState<boolean>(false);
     const [isLoadingAccounts, setIsLoadingAccounts] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    
+    // New State for Drill-down
+    const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
 
     const handleAuthenticationError = useCallback(() => {
         setIsAuthenticated(false);
@@ -88,6 +91,8 @@ const App: React.FC = () => {
         if (!selectedAccount || !isAuthenticated) return;
         setIsLoadingKpis(true);
         setError(null);
+        // Reset selection when fetching new data
+        setSelectedEntityId(null);
         try {
             const data = await getKpiData(selectedAccount.id, selectedLevel, dateRange);
             setKpiData(data);
@@ -108,7 +113,12 @@ const App: React.FC = () => {
     
     const aggregatedChartData = useMemo(() => {
         // For charts, we ONLY want daily breakdowns, not the period summaries
-        const dailyData = kpiData.filter(d => !d.isPeriodTotal);
+        let dailyData = kpiData.filter(d => !d.isPeriodTotal);
+
+        // Filter by selected entity if one is clicked in the table
+        if (selectedEntityId) {
+            dailyData = dailyData.filter(d => d.entityId === selectedEntityId);
+        }
 
         if (selectedLevel === DataLevel.ACCOUNT) {
             // Account level already comes sorted by date from API logic usually, but sort to be safe
@@ -146,7 +156,7 @@ const App: React.FC = () => {
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
-    }, [kpiData, selectedLevel]);
+    }, [kpiData, selectedLevel, selectedEntityId]);
     
     const tableData = useMemo(() => {
         if (kpiData.length === 0) return [];
@@ -214,6 +224,23 @@ const App: React.FC = () => {
         setSelectedLevel(DataLevel.ACCOUNT);
         setDateRange('last_14_days');
         setKpiData([]); // Clear old data immediately
+        setSelectedEntityId(null);
+    };
+
+    const handleRowClick = (entityId: string) => {
+        // Disable drill-down on Account level since rows are dates, not distinct entities to filter by
+        if (selectedLevel === DataLevel.ACCOUNT) return;
+
+        setSelectedEntityId(prev => prev === entityId ? null : entityId);
+    };
+
+    const getChartLabel = () => {
+        const baseLabel = chartMetrics[chartMetric].label;
+        if (selectedEntityId) {
+            const entity = kpiData.find(d => d.entityId === selectedEntityId);
+            return entity ? `${baseLabel} - ${entity.name}` : baseLabel;
+        }
+        return baseLabel;
     };
 
     const LevelSelector: React.FC<{ disabled: boolean }> = ({ disabled }) => (
@@ -222,7 +249,9 @@ const App: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
                 {(Object.values(DataLevel)).map(level => (
                     <button
-                        key={level} onClick={() => setSelectedLevel(level)} disabled={disabled}
+                        key={level} 
+                        onClick={() => { setSelectedLevel(level); setSelectedEntityId(null); }} 
+                        disabled={disabled}
                         className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${selectedLevel === level ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
                     >{DATA_LEVEL_LABELS[level]}</button>
                 ))}
@@ -333,9 +362,20 @@ const App: React.FC = () => {
                     </div>
                     
                     {showChart && (
-                        <LineChart data={aggregatedChartData} metric={chartMetric} label={chartMetrics[chartMetric].label} isLoading={isLoadingKpis} />
+                        <LineChart 
+                            data={aggregatedChartData} 
+                            metric={chartMetric} 
+                            label={getChartLabel()} 
+                            isLoading={isLoadingKpis} 
+                        />
                     )}
-                    <KpiTable data={tableData} isLoading={isLoadingKpis} currency={selectedAccount.currency} />
+                    <KpiTable 
+                        data={tableData} 
+                        isLoading={isLoadingKpis} 
+                        currency={selectedAccount.currency}
+                        selectedEntityId={selectedEntityId}
+                        onRowClick={handleRowClick}
+                    />
                 </div>
             ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta de anúncio foi encontrada para este usuário.</p></div>))}
         </main>
