@@ -59,8 +59,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const levelParam = typedLevel;
     
     // Define fields based on level
-    // Added actions to calculate results
-    let fieldsList = ['spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks', 'actions', 'date_start', 'date_stop'];
+    // Added actions to calculate results and objective to determine WHAT the result is
+    let fieldsList = ['spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks', 'actions', 'date_start', 'date_stop', 'objective'];
     
     switch (typedLevel) {
         case DataLevel.ACCOUNT:
@@ -221,29 +221,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const clicks = parseInt(item?.clicks ?? '0', 10);
             const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
             
-            // Calculate Results based on actions
+            // ----------- DYNAMIC RESULTS LOGIC -----------
             let resultsCount = 0;
-            const actions = item.actions || [];
-            
-            // UPDATED LIST: Focusing on Primary Conversions and Messaging Conversations
-            // Excluding 'add_to_cart', 'initiate_checkout' to match standard "Results" columns better
-            const primaryConversions = [
-                'purchase', 
-                'lead', 
-                'complete_registration', 
-                'submit_application', 
-                'schedule', 
-                'mobile_app_install',
-                'onsite_conversion.messaging_conversation_started_7d', // Standard for Engagement/Messages
-                'contact'
-            ];
-            
-            if (Array.isArray(actions)) {
-                actions.forEach((action: any) => {
-                     if (primaryConversions.includes(action.action_type)) {
-                         resultsCount += parseFloat(action.value);
-                     }
-                });
+            const objective = item.objective; // e.g., OUTCOME_AWARENESS, OUTCOME_TRAFFIC, OUTCOME_LEADS
+
+            // 1. Awareness Campaigns: Result = Reach
+            if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
+                resultsCount = reach;
+            } 
+            // 2. Traffic Campaigns: Result = Link Clicks
+            else if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
+                resultsCount = inlineLinkClicks;
+            } 
+            // 3. Conversion/Engagement Campaigns: Result = Specific Actions
+            else {
+                const actions = item.actions || [];
+                
+                // List of actions that count as "Results" for performance campaigns
+                // Includes pixel events and messaging events (WhatsApp, Instagram Direct, Messenger)
+                const conversionActions = [
+                    'purchase', 
+                    'offsite_conversion.fb_pixel_purchase',
+                    'lead', 
+                    'offsite_conversion.fb_pixel_lead',
+                    'complete_registration', 
+                    'offsite_conversion.fb_pixel_complete_registration',
+                    'submit_application', 
+                    'schedule', 
+                    'contact',
+                    'mobile_app_install',
+                    // Messaging Conversions (Critical for Engagement campaigns)
+                    'onsite_conversion.messaging_conversation_started_7d',
+                    'messaging_conversation_started_7d',
+                    'onsite_conversion.messaging_first_reply'
+                ];
+                
+                if (Array.isArray(actions)) {
+                    actions.forEach((action: any) => {
+                        // Check if the action type matches one of our key conversion metrics
+                        if (conversionActions.includes(action.action_type)) {
+                            resultsCount += parseFloat(action.value);
+                        }
+                    });
+                }
             }
             
             // Calculate rates locally for the row
