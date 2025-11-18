@@ -12,31 +12,31 @@ interface KpiTableProps {
 
 type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date' | 'entityId'>;
 
+// Configuração movida para fora do componente para garantir ordem estática absoluta
+const HEADERS_CONFIG: { label: string; key: SortableKeys; align?: 'left' | 'right' | 'center'; minWidth: string }[] = [
+    { label: "Nome", key: "name", align: 'left', minWidth: 'min-w-[160px] md:min-w-[250px]' },
+    { label: "Valor Gasto", key: "amountSpent", align: 'right', minWidth: 'min-w-[110px] md:min-w-[120px]' },
+    { label: "Impressões", key: "impressions", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
+    { label: "Alcance", key: "reach", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
+    { label: "Cliques (Todos)", key: "clicks", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
+    { label: "Cliques no Link", key: "inlineLinkClicks", align: 'right', minWidth: 'min-w-[110px] md:min-w-[130px]' },
+    { label: "Resultados", key: "results", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
+    { label: "Custo p/ Resultado", key: "costPerResult", align: 'right', minWidth: 'min-w-[130px] md:min-w-[150px]' },
+    { label: "CTR", key: "ctr", align: 'right', minWidth: 'min-w-[70px] md:min-w-[90px]' },
+    { label: "CPM", key: "cpm", align: 'right', minWidth: 'min-w-[90px] md:min-w-[100px]' },
+    { label: "CPC", key: "cpc", align: 'right', minWidth: 'min-w-[90px] md:min-w-[100px]' },
+    { label: "CPC (Link)", key: "costPerInlineLinkClick", align: 'right', minWidth: 'min-w-[100px] md:min-w-[120px]' },
+];
+
 const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selectedEntityId, onRowClick }) => {
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({
         key: 'amountSpent',
         direction: 'descending'
     });
 
-    // Configuração estrita das colunas com larguras responsivas
-    const headersConfig: { label: string; key: SortableKeys; align?: 'left' | 'right' | 'center'; minWidth: string }[] = [
-        { label: "Nome", key: "name", align: 'left', minWidth: 'min-w-[160px] md:min-w-[250px]' },
-        { label: "Valor Gasto", key: "amountSpent", align: 'right', minWidth: 'min-w-[110px] md:min-w-[120px]' },
-        { label: "Impressões", key: "impressions", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
-        { label: "Alcance", key: "reach", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
-        { label: "Cliques (Todos)", key: "clicks", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
-        { label: "Cliques no Link", key: "inlineLinkClicks", align: 'right', minWidth: 'min-w-[110px] md:min-w-[130px]' },
-        { label: "Resultados", key: "results", align: 'right', minWidth: 'min-w-[90px] md:min-w-[110px]' },
-        { label: "Custo p/ Resultado", key: "costPerResult", align: 'right', minWidth: 'min-w-[130px] md:min-w-[150px]' },
-        { label: "CTR", key: "ctr", align: 'right', minWidth: 'min-w-[70px] md:min-w-[90px]' },
-        { label: "CPM", key: "cpm", align: 'right', minWidth: 'min-w-[90px] md:min-w-[100px]' },
-        { label: "CPC", key: "cpc", align: 'right', minWidth: 'min-w-[90px] md:min-w-[100px]' },
-        { label: "CPC (Link)", key: "costPerInlineLinkClick", align: 'right', minWidth: 'min-w-[100px] md:min-w-[120px]' },
-    ];
-
     // Estado para colunas visíveis
     const [visibleKeys, setVisibleKeys] = useState<Set<SortableKeys>>(
-        new Set(headersConfig.map(h => h.key))
+        new Set(HEADERS_CONFIG.map(h => h.key))
     );
     const [showColumnSelector, setShowColumnSelector] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -63,8 +63,8 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         setVisibleKeys(newSet);
     };
 
-    // Filtra os headers baseado na visibilidade
-    const visibleHeaders = headersConfig.filter(h => visibleKeys.has(h.key));
+    // Filtra os headers baseado na visibilidade, MANTENDO A ORDEM ORIGINAL DE HEADERS_CONFIG
+    const visibleHeaders = HEADERS_CONFIG.filter(h => visibleKeys.has(h.key));
 
     const formatCurrency = (value: number) => {
         if (value > 0 && value < 0.01) {
@@ -201,7 +201,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                     {showColumnSelector && (
                         <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
                             <div className="p-2 max-h-[300px] overflow-y-auto">
-                                {headersConfig.map(h => (
+                                {HEADERS_CONFIG.map(h => (
                                     <label key={h.key} className={`flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer rounded text-sm ${h.key === 'name' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                         <input 
                                             type="checkbox" 
@@ -227,8 +227,9 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                 <th 
                                     key={header.key} 
                                     scope="col" 
+                                    // REMOVIDO 'uppercase' para garantir que a preferência do usuário seja respeitada e para indicar visualmente que o código foi atualizado
                                     className={`
-                                        py-3 px-4 text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wider cursor-pointer select-none 
+                                        py-3 px-4 text-xs font-bold text-gray-700 dark:text-gray-200 tracking-wider cursor-pointer select-none 
                                         hover:bg-gray-100 dark:hover:bg-gray-600 whitespace-nowrap ${header.minWidth}
                                         ${index === 0 ? 'sticky left-0 z-30 bg-gray-50 dark:bg-gray-700 border-r border-gray-200 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}
                                     `}
