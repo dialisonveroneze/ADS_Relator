@@ -272,7 +272,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             if (resultsCount > 0) break; // Only break if we found a positive value
                         }
                     } else {
-                        // Sum all partial matches (e.g. '...started_7d' + '...started_1d')
+                        // SMART SUM LOGIC:
+                        // First, check for common exact keys to avoid double counting (e.g. aggregate + attribution)
+                        // This fixes duplicate counting in standard cases
+                        const exactKeys = [
+                            `onsite_conversion.${priority.key}_7d`,
+                            `${priority.key}_7d`,
+                            `onsite_conversion.${priority.key}_1d`,
+                            `${priority.key}_1d`,
+                            `onsite_conversion.${priority.key}_28d`,
+                            `${priority.key}_28d`
+                        ];
+
+                        let foundExact = false;
+                        for (const k of exactKeys) {
+                             const m = actions.find((a: any) => a.action_type === k);
+                             if (m) {
+                                 const val = parseFloat(m.value);
+                                 if (val > 0) {
+                                     resultsCount = val;
+                                     foundExact = true;
+                                     break;
+                                 }
+                             }
+                        }
+
+                        if (foundExact) {
+                            break;
+                        }
+
+                        // Second, if no standard key found, fallback to summing partial matches
+                        // This handles split attribution cases (e.g. _7d_click + _1d_view)
                         const matches = actions.filter((a: any) => a.action_type.includes(priority.key));
                         if (matches.length > 0) {
                             const sum = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);

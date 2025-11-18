@@ -33,8 +33,8 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
     const formatPercent = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2 }).format(value / 100);
 
-    // Column Order Requested: 
-    // Nome, Valor Gasto, Impressões, Alcance, Cliques (Todos), Cliques no Link, 
+    // Order Requested: 
+    // Nome, Gasto, Impressões, Alcance, Cliques (Todos), Cliques no Link, 
     // Resultados, Custo p/ Resultado, CTR, CPM, CPC, CPC (Link)
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
