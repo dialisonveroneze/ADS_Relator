@@ -62,11 +62,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fetchInsights = async (preset: string, enableBreakdown: boolean) => {
         let allData: any[] = [];
         
-        // CRITICAL FIX: Filter to ONLY return rows with impressions > 0.
-        // This prevents the API from returning pages of "empty" data for paused/deleted ads,
-        // which causes timeouts and empty reports.
-        const filtering = [{ field: 'impressions', operator: 'GREATER_THAN', value: 0 }];
-        const filterParam = `&filtering=${encodeURIComponent(JSON.stringify(filtering))}`;
+        // REMOVED FILTERING: We allow all data to pass through, even if impressions are 0.
+        // Filtering on the backend was causing valid rows (spend > 0, imp = 0) to be dropped,
+        // resulting in empty charts.
         
         // We use date_preset for everything now as it is safer than manual time_range calculations regarding timezones.
         // We enable time_increment=1 only for short ranges (last_X_days) to populate the chart.
@@ -76,7 +74,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                   `&fields=${fields}` +
                   `&date_preset=${preset}` +
                   `${enableBreakdown ? '&time_increment=1' : ''}` +
-                  `${filterParam}` + 
                   `&limit=100&access_token=${accessToken}`;
 
         while (url) {
@@ -117,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // FALLBACK / AGGREGATE MODE
-        // If daily fetch failed OR returned empty (possible strict filtering) OR we skipped it (monthly mode):
+        // If daily fetch failed OR returned empty (possible strict filtering or API quirks) OR we skipped it (monthly mode):
         // We fetch the total aggregate data. 
         // This ensures the TABLE always has data, even if the chart (daily) is empty.
         if (allInsights.length === 0) {
