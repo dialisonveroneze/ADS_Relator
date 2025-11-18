@@ -230,17 +230,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 // 1. Check for High Value Conversions FIRST
                 for (const priorityStem of conversionPriorities) {
-                    // First try exact match (e.g. 'purchase')
-                    let match = actions.find((a: any) => a.action_type === priorityStem);
+                    // A. First try EXACT match (e.g. 'purchase' or 'leads')
+                    // This is crucial for metrics like 'purchase' where Meta provides a pre-calculated aggregate.
+                    // If we skipped this and went straight to partial sum, we might double count (aggregate + breakdown).
+                    let exactMatch = actions.find((a: any) => a.action_type === priorityStem);
                     
-                    // If no exact match, try partial match (e.g. 'offsite_conversion.fb_pixel_purchase')
-                    if (!match) {
-                        match = actions.find((a: any) => a.action_type.includes(priorityStem));
+                    if (exactMatch) {
+                        resultsCount = parseFloat(exactMatch.value);
+                        break; // Found aggregate, stop.
                     }
 
-                    if (match) {
-                        resultsCount = parseFloat(match.value);
-                        break; // STOP after finding the highest priority metric
+                    // B. If no exact match, look for PARTIAL matches (e.g. 'messaging_conversation_started_7d')
+                    // AND sum them up. This fixes the issue where messaging results are split into 'click' and 'view'
+                    // attribution windows (e.g. 33 click + 7 view = 40 total).
+                    const partialMatches = actions.filter((a: any) => a.action_type.includes(priorityStem));
+
+                    if (partialMatches.length > 0) {
+                        resultsCount = partialMatches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
+                        break; // Found matches for this priority, stop.
                     }
                 }
 
