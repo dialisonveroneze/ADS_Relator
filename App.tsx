@@ -13,6 +13,7 @@ const chartMetrics = {
     amountSpent: { label: 'Valor Gasto' },
     impressions: { label: 'Impressões' },
     reach: { label: 'Alcance' },
+    results: { label: 'Resultados' },
     clicks: { label: 'Cliques (Todos)' },
     inlineLinkClicks: { label: 'Cliques no Link' },
 };
@@ -116,15 +117,17 @@ const App: React.FC = () => {
                 dailyTotals[item.date] = {
                     id: item.date, entityId: item.date, name: `Resumo - ${item.date}`, level: selectedLevel, date: item.date,
                     amountSpent: 0, impressions: 0, cpm: 0,
-                    reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0
+                    reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0,
+                    results: 0, costPerResult: 0
                 };
             }
             const totals = dailyTotals[item.date];
             totals.amountSpent += item.amountSpent;
             totals.impressions += item.impressions;
-            totals.reach += item.reach; // Approximation for daily sum
+            totals.reach += item.reach; 
             totals.clicks += item.clicks;
             totals.inlineLinkClicks += item.inlineLinkClicks;
+            totals.results += item.results;
         });
 
         // Recalculate rates for chart
@@ -133,6 +136,7 @@ const App: React.FC = () => {
             totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
             totals.cpc = totals.clicks > 0 ? parseFloat((totals.amountSpent / totals.clicks).toFixed(2)) : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? parseFloat((totals.amountSpent / totals.inlineLinkClicks).toFixed(2)) : 0;
+            totals.costPerResult = totals.results > 0 ? parseFloat((totals.amountSpent / totals.results).toFixed(2)) : 0;
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
@@ -155,16 +159,18 @@ const App: React.FC = () => {
                     level: item.level,
                     date: '', 
                     amountSpent: 0, impressions: 0, cpm: 0,
-                    reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0
+                    reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0,
+                    results: 0, costPerResult: 0
                 };
             }
             
             const totals = aggregated[item.entityId];
             totals.amountSpent += item.amountSpent;
             totals.impressions += item.impressions;
-            totals.reach += item.reach; // Note: Summing reach across days is technically not deduplicated, but best possible with daily data.
+            totals.reach += item.reach;
             totals.clicks += item.clicks;
             totals.inlineLinkClicks += item.inlineLinkClicks;
+            totals.results += item.results;
         });
     
         // Recalculate rates based on aggregated totals
@@ -173,6 +179,7 @@ const App: React.FC = () => {
             totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
             totals.cpc = totals.clicks > 0 ? parseFloat((totals.amountSpent / totals.clicks).toFixed(2)) : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? parseFloat((totals.amountSpent / totals.inlineLinkClicks).toFixed(2)) : 0;
+            totals.costPerResult = totals.results > 0 ? parseFloat((totals.amountSpent / totals.results).toFixed(2)) : 0;
         });
     
         return Object.values(aggregated);

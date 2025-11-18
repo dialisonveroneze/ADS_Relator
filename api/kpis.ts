@@ -1,3 +1,4 @@
+
 // api/kpis.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
@@ -27,6 +28,8 @@ export interface KpiData {
   ctr: number;
   cpc: number;
   costPerInlineLinkClick: number;
+  results: number;
+  costPerResult: number;
 }
 
 // Mapeia nossas opções de período para os presets da API da Meta
@@ -65,8 +68,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const levelParam = typedLevel;
     
     // Define fields based on level
-    // Added reach, clicks, inline_link_clicks (proxy for Results/Traffic)
-    let fieldsList = ['spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks', 'date_start', 'date_stop'];
+    // Added actions to calculate results
+    let fieldsList = ['spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks', 'actions', 'date_start', 'date_stop'];
     
     switch (typedLevel) {
         case DataLevel.ACCOUNT:
@@ -178,11 +181,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const clicks = parseInt(item?.clicks ?? '0', 10);
             const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
             
+            // Calculate Results based on actions
+            let resultsCount = 0;
+            const actions = item.actions || [];
+            // Common conversion actions
+            const conversionTypes = [
+                'purchase', 'lead', 'complete_registration', 'submit_application', 
+                'schedule', 'add_to_cart', 'initiate_checkout', 'contact', 
+                'subscribe', 'start_trial'
+            ];
+            
+            if (Array.isArray(actions)) {
+                actions.forEach((action: any) => {
+                     if (conversionTypes.includes(action.action_type) || action.action_type.startsWith('onsite_conversion')) {
+                         resultsCount += parseFloat(action.value);
+                     }
+                });
+            }
+            
             // Calculate rates locally for the row
             const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
             const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
             const cpc = clicks > 0 ? spend / clicks : 0;
             const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
+            const costPerResult = resultsCount > 0 ? spend / resultsCount : 0;
             
             return {
                 id: `${entityId}_${item.date_start}_${Math.random()}`, // Unique Key
@@ -198,7 +220,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 cpm: cpm,
                 ctr: ctr,
                 cpc: cpc,
-                costPerInlineLinkClick: costPerInlineLinkClick
+                costPerInlineLinkClick: costPerInlineLinkClick,
+                results: resultsCount,
+                costPerResult: costPerResult
             };
         });
 

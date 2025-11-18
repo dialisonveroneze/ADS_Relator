@@ -29,8 +29,10 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
         { label: "Cliques (Todos)", key: "clicks" },
         { label: "CPC (Todos)", key: "cpc" },
         { label: "CTR (Todos)", key: "ctr" },
-        { label: "Cliques no Link (Resultados)", key: "inlineLinkClicks" },
-        { label: "Custo por Resultado", key: "costPerInlineLinkClick" }
+        { label: "Cliques no Link", key: "inlineLinkClicks" },
+        { label: "Custo p/ Clique (Link)", key: "costPerInlineLinkClick" },
+        { label: "Resultados", key: "results" },
+        { label: "Custo p/ Resultado", key: "costPerResult" }
     ];
 
     const requestSort = (key: SortableKeys) => {
@@ -119,8 +121,10 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
                                     <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.clicks)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpc)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatPercent(item.ctr)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap font-semibold text-blue-600 dark:text-blue-400">{formatNumber(item.inlineLinkClicks)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.inlineLinkClicks)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerInlineLinkClick)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap font-semibold text-blue-600 dark:text-blue-400">{formatNumber(item.results)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerResult)}</td>
                                 </tr>
                             ))}
                             {!isLoading && sortedData.length === 0 && (

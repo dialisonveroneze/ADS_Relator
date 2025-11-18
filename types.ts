@@ -23,6 +23,8 @@ export interface KpiData {
   ctr: number;
   cpc: number;
   costPerInlineLinkClick: number;
+  results: number;
+  costPerResult: number;
 }
 
 export enum DataLevel {
