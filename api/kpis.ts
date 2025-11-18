@@ -34,7 +34,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const typedLevel = level as DataLevel;
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
-    const datePreset = datePresetMap[dateRange];
     
     // The API level parameter now matches our enum directly (account, campaign, adset, ad)
     const levelParam = typedLevel;
@@ -59,37 +58,87 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const fields = fieldsList.join(',');
 
-    // CRITICAL FIX: The Meta API often returns empty data (bug) when combining
-    // date_preset='this_month' or 'last_month' with time_increment=1.
-    // We disable daily breakdown for these presets to ensure data retrieval.
-    const useDailyBreakdown = !['this_month', 'last_month'].includes(dateRange);
+    // Helper function to fetch data from Meta, handling pagination
+    const fetchInsights = async (timeQuery: string, enableBreakdown: boolean) => {
+        let allData: any[] = [];
+        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}${timeQuery}${enableBreakdown ? '&time_increment=1' : ''}&limit=100&access_token=${accessToken}`;
 
-    try {
-        let allInsights: any[] = [];
-        // Construct URL conditionally based on the breakdown requirement
-        let url: string | null = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}${useDailyBreakdown ? '&time_increment=1' : ''}&limit=100&access_token=${accessToken}`;
-
-        // Pagination loop
         while (url) {
-            const metaResponse = await fetch(url);
-            const data = await metaResponse.json();
+            const response = await fetch(url);
+            const data = await response.json();
 
             if (data.error) {
-                console.error("Erro da API da Meta:", data.error);
-                if (data.error.code === 190) {
-                     return res.status(401).json({ message: 'Token de acesso inválido ou expirado.' });
-                }
-                return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
+                 // Propagate error to be handled by the caller
+                 throw data.error;
             }
-            
+
             if (data.data && Array.isArray(data.data)) {
-                allInsights = allInsights.concat(data.data);
+                allData = allData.concat(data.data);
             }
             
-            // Check for next page
             url = data.paging && data.paging.next ? data.paging.next : null;
         }
+        return allData;
+    };
+
+    try {
+        let timeQuery = '';
+        let shouldBreakdown = false;
         
+        const today = new Date();
+        const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
+        // STRATEGY: 
+        // 1. For "This Month" / "Last Month", use date_preset and DISABLE breakdown. 
+        //    Mixing presets + time_increment often causes empty data returns in Meta API v19+.
+        // 2. For "Last X Days", use explicit time_range and ENABLE breakdown.
+        //    Explicit ranges are more robust for granular data.
+
+        if (['this_month', 'last_month'].includes(dateRange)) {
+             timeQuery = `&date_preset=${datePresetMap[dateRange]}`;
+             shouldBreakdown = false; 
+        } else {
+             const end = new Date();
+             const start = new Date();
+             
+             // Note: We calculate dates in UTC (Server time). 
+             // Ideally, we should know the Ad Account timezone, but this is a robust approximation.
+             if (dateRange === 'last_7_days') start.setDate(today.getDate() - 7);
+             else if (dateRange === 'last_14_days') start.setDate(today.getDate() - 14);
+             else if (dateRange === 'last_30_days') start.setDate(today.getDate() - 30);
+             
+             const rangeJSON = JSON.stringify({ since: formatDate(start), until: formatDate(end) });
+             timeQuery = `&time_range=${encodeURIComponent(rangeJSON)}`;
+             shouldBreakdown = true;
+        }
+
+        let allInsights: any[] = [];
+
+        try {
+            // Attempt 1: Fetch with the preferred strategy (likely with breakdown for days)
+            allInsights = await fetchInsights(timeQuery, shouldBreakdown);
+        } catch (err: any) {
+            // If it's an Auth error (190), stop immediately.
+            if (err.code === 190) throw err;
+            
+            // If it's another error and we were trying to breakdown, log and fall through to retry
+            console.warn("Initial fetch failed, attempting fallback.", err.message);
+        }
+
+        // FAILSAFE / FALLBACK:
+        // If the first attempt returned NO DATA (empty array) AND we were trying to get a daily breakdown,
+        // it's possible the API is strict about limits or low-volume data.
+        // We try again WITHOUT breakdown to ensure the user at least sees the TOTALS in the table.
+        if (allInsights.length === 0 && shouldBreakdown) {
+            console.log("Daily breakdown returned empty. Retrying with aggregate data...");
+            try {
+                allInsights = await fetchInsights(timeQuery, false);
+            } catch (retryErr) {
+                console.error("Fallback fetch also failed", retryErr);
+                // If fallback fails, we just return the empty array or the previous error state
+            }
+        }
+
         if (allInsights.length === 0) {
              return res.status(200).json([]);
         }
@@ -141,8 +190,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         res.status(200).json(formattedKpi);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Erro interno ao buscar KPIs para ${accountId}:`, error);
+        if (error.code === 190) {
+             return res.status(401).json({ message: 'Token de acesso inválido ou expirado.' });
+        }
         res.status(500).json({ message: 'Erro interno do servidor.' });
     }
 }
