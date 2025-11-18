@@ -222,23 +222,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 else {
                     const actions = item.actions || [];
                     
-                    const validActionTypes = [
-                        'purchase', 
-                        'lead', 
-                        'complete_registration', 
-                        'submit_application', 
-                        'schedule', 
-                        'contact',
-                        'mobile_app_install',
-                        'onsite_conversion.messaging_conversation_started_7d', 
-                    ];
-                    
+                    // Map all actions to a dictionary for easy lookup
+                    const actionMap: Record<string, number> = {};
                     if (Array.isArray(actions)) {
                         actions.forEach((action: any) => {
-                            if (validActionTypes.includes(action.action_type)) {
-                                resultsCount += parseFloat(action.value);
-                            }
+                            actionMap[action.action_type] = parseFloat(action.value);
                         });
+                    }
+
+                    // Priority List for "Results"
+                    // We take the first match found. This prevents summing overlapping metrics 
+                    // (e.g. a Messaging campaign often fires 'contact' pixel events too. Summing them creates duplication).
+                    const resultPriorities = [
+                        'purchase',
+                        'onsite_conversion.messaging_conversation_started_7d',
+                        'leads',
+                        'lead',
+                        'schedule',
+                        'complete_registration',
+                        'submit_application',
+                        'mobile_app_install',
+                        'contact' // Lowest priority
+                    ];
+
+                    for (const actionType of resultPriorities) {
+                        if (actionMap[actionType] && actionMap[actionType] > 0) {
+                            resultsCount = actionMap[actionType];
+                            break; // STOP after finding the highest priority metric
+                        }
                     }
                 }
                 
