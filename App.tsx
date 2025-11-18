@@ -148,11 +148,12 @@ const App: React.FC = () => {
 
         // Recalculate rates for chart
         Object.values(dailyTotals).forEach(totals => {
-            totals.cpm = totals.impressions > 0 ? parseFloat(((totals.amountSpent / totals.impressions) * 1000).toFixed(2)) : 0;
-            totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
-            totals.cpc = totals.clicks > 0 ? parseFloat((totals.amountSpent / totals.clicks).toFixed(2)) : 0;
-            totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? parseFloat((totals.amountSpent / totals.inlineLinkClicks).toFixed(2)) : 0;
-            totals.costPerResult = totals.results > 0 ? parseFloat((totals.amountSpent / totals.results).toFixed(2)) : 0;
+            // Removed toFixed(2) to keep precision in data processing
+            totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
+            totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+            totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
+            totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
+            totals.costPerResult = totals.results > 0 ? totals.amountSpent / totals.results : 0;
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
@@ -208,11 +209,12 @@ const App: React.FC = () => {
     
         // Recalculate rates based on aggregated totals
         Object.values(aggregated).forEach(totals => {
-            totals.cpm = totals.impressions > 0 ? parseFloat(((totals.amountSpent / totals.impressions) * 1000).toFixed(2)) : 0;
-            totals.ctr = totals.impressions > 0 ? parseFloat(((totals.clicks / totals.impressions) * 100).toFixed(2)) : 0;
-            totals.cpc = totals.clicks > 0 ? parseFloat((totals.amountSpent / totals.clicks).toFixed(2)) : 0;
-            totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? parseFloat((totals.amountSpent / totals.inlineLinkClicks).toFixed(2)) : 0;
-            totals.costPerResult = totals.results > 0 ? parseFloat((totals.amountSpent / totals.results).toFixed(2)) : 0;
+            // Removed toFixed(2) to keep precision
+            totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
+            totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+            totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
+            totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
+            totals.costPerResult = totals.results > 0 ? totals.amountSpent / totals.results : 0;
         });
     
         return Object.values(aggregated);

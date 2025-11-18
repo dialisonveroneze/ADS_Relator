@@ -18,7 +18,18 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         direction: 'descending'
     });
 
-    const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
+    const formatCurrency = (value: number) => {
+        // If value is very small (like cost per reach), show more decimals
+        if (value > 0 && value < 0.01) {
+            return new Intl.NumberFormat('pt-BR', { 
+                style: 'currency', 
+                currency, 
+                minimumFractionDigits: 4, 
+                maximumFractionDigits: 4 
+            }).format(value);
+        }
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
+    };
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
     const formatPercent = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2 }).format(value / 100);
 
