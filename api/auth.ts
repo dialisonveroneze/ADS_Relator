@@ -5,19 +5,23 @@ import cookie from 'cookie';
 // Este endpoint lida com o redirecionamento de volta da Meta após a autorização do usuário.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { code } = req.query;
-    const { META_APP_ID, META_APP_SECRET, ROOT_URL } = process.env;
+    const { META_APP_ID, META_APP_SECRET } = process.env;
 
     if (!code || typeof code !== 'string') {
         return res.status(400).send('Código de autorização inválido.');
     }
 
-    if (!META_APP_ID || !META_APP_SECRET || !ROOT_URL) {
+    if (!META_APP_ID || !META_APP_SECRET) {
         console.error("Variáveis de ambiente faltando.");
         return res.status(500).send('Erro de configuração no servidor.');
     }
     
-    // A redirect_uri aqui DEVE ser exatamente a mesma que foi enviada na URL de autorização.
-    const redirectUri = `${ROOT_URL}/api/auth`;
+    // A redirect_uri aqui DEVE ser exatamente a mesma que foi enviada na URL de autorização pelo Frontend.
+    // Usamos os headers da requisição para determinar o domínio atual dinamicamente.
+    // Isso permite que o login funcione tanto em localhost, quanto em deploys de preview da Vercel e produção.
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const redirectUri = `${protocol}://${host}/api/auth`;
 
     // Passo 2: Trocar o código de autorização por um access token.
     const tokenUrl = `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${META_APP_SECRET}&code=${code}`;
@@ -28,16 +32,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (tokenData.error || !tokenData.access_token) {
             console.error('Erro ao obter access token da Meta:', tokenData.error);
-            return res.status(400).send('Falha ao obter token de acesso da Meta.');
+            // Log útil para debug: mostra qual URI foi enviada para ajudar a conferir no painel do FB
+            console.error('URI de redirecionamento usada:', redirectUri);
+            return res.status(400).send('Falha ao obter token de acesso da Meta. Verifique se a URL de redirecionamento está autorizada no painel do Facebook.');
         }
 
         const { access_token } = tokenData;
 
         // Armazena o access_token em um cookie seguro, httpOnly.
-        // httpOnly: O cookie não pode ser acessado por JavaScript no cliente (protege contra XSS).
-        // secure: O cookie só será enviado em requisições HTTPS.
-        // path=/: O cookie está disponível em todo o site.
-        // maxAge: Define o tempo de expiração do cookie (ex: 30 dias).
         res.setHeader('Set-Cookie', cookie.serialize('meta_token', access_token, {
             httpOnly: true,
             secure: process.env.NODE_ENV !== 'development',
