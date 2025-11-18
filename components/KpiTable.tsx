@@ -35,7 +35,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
 
     // Column Order Requested: 
     // Nome, Valor Gasto, Impressões, Alcance, Cliques (Todos), Cliques no Link, 
-    // Resultados, Custo p/ Resultado, CTR (Todos), CPM, CPC (Todos), CPC (Link)
+    // Resultados, Custo p/ Resultado, CTR, CPM, CPC, CPC (Link)
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
@@ -45,9 +45,9 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         { label: "Cliques no Link", key: "inlineLinkClicks" },
         { label: "Resultados", key: "results" },
         { label: "Custo p/ Resultado", key: "costPerResult" },
-        { label: "CTR (Todos)", key: "ctr" },
+        { label: "CTR", key: "ctr" },
         { label: "CPM", key: "cpm" },
-        { label: "CPC (Todos)", key: "cpc" },
+        { label: "CPC", key: "cpc" },
         { label: "CPC (Link)", key: "costPerInlineLinkClick" },
     ];
 
@@ -164,6 +164,12 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
          }
     };
 
+    const getCellClass = (key: SortableKeys) => {
+        if (key === 'name') return "font-medium text-gray-900 dark:text-white whitespace-nowrap";
+        if (key === 'results') return "whitespace-nowrap font-semibold text-blue-600 dark:text-blue-400";
+        return "whitespace-nowrap";
+    };
+
     return (
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-lg mt-6 overflow-x-auto">
             <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4">Métricas Detalhadas</h3>
@@ -198,18 +204,11 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                         }
                                     `}
                                 >
-                                    <td className="py-3 px-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{item.name}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.amountSpent)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.impressions)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.reach)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.clicks)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.inlineLinkClicks)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap font-semibold text-blue-600 dark:text-blue-400">{formatNumber(item.results)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerResult)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatPercent(item.ctr)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpm)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpc)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerInlineLinkClick)}</td>
+                                    {headers.map(header => (
+                                        <td key={header.key} className={`py-3 px-4 ${getCellClass(header.key)}`}>
+                                            {renderCell(item, header.key)}
+                                        </td>
+                                    ))}
                                 </tr>
                             ))}
                             {!isLoading && sortedData.length === 0 && (
