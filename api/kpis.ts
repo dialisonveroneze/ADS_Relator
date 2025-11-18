@@ -1,3 +1,4 @@
+
 // api/kpis.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
@@ -38,9 +39,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const datePreset = datePresetMap[dateRange];
     const levelParam = levelMap[typedLevel];
     
-    // Solicitamos um superconjunto de campos. A API da Meta irá ignorar os campos
-    // que não são aplicáveis ao `level` solicitado, tornando esta abordagem mais robusta.
-    const fields = 'account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions';
+    // Define fields based on level to avoid requesting invalid fields for the aggregation level
+    let fieldsList = ['spend', 'impressions', 'date_start', 'date_stop'];
+    
+    switch (typedLevel) {
+        case DataLevel.ACCOUNT:
+            fieldsList.push('account_id', 'account_name');
+            break;
+        case DataLevel.CAMPAIGN:
+            fieldsList.push('campaign_id', 'campaign_name');
+            break;
+        case DataLevel.AD_SET:
+            fieldsList.push('campaign_id', 'campaign_name', 'adset_id', 'adset_name');
+            break;
+        case DataLevel.AD:
+            fieldsList.push('campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name');
+            break;
+    }
+
+    const fields = fieldsList.join(',');
 
     try {
         let allInsights: any[] = [];
@@ -59,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
             }
             
-            if (data.data) {
+            if (data.data && Array.isArray(data.data)) {
                 allInsights = allInsights.concat(data.data);
             }
             
@@ -68,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         
         if (allInsights.length === 0) {
-             console.warn("API da Meta retornou sucesso mas sem dados (data.data está ausente).", { accountId, level, dateRange });
+             // Return empty array if no data found, frontend will handle empty state
              return res.status(200).json([]);
         }
 
@@ -76,25 +93,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let entityId: string;
             let entityName: string;
 
+            // Fallback ID logic: If the specific ID field is missing, use accountId or generate a unique placeholder
+            // This protects against cases where API returns partial objects
+            const safeAccountId = item.account_id || accountId;
+
             switch (typedLevel) {
                 case DataLevel.ACCOUNT:
-                    entityId = item.account_id;
-                    entityName = "Resumo Diário";
+                    entityId = safeAccountId;
+                    entityName = item.account_name || "Resumo da Conta";
                     break;
                 case DataLevel.CAMPAIGN:
-                    entityId = item.campaign_id;
+                    entityId = item.campaign_id || `camp_${Math.random().toString(36).substr(2, 9)}`;
                     entityName = item.campaign_name || "(Campanha sem nome)";
                     break;
                 case DataLevel.AD_SET:
-                    entityId = item.adset_id;
+                    entityId = item.adset_id || `adset_${Math.random().toString(36).substr(2, 9)}`;
                     entityName = `${item.campaign_name || "(?)"} > ${item.adset_name || "(Grupo sem nome)"}`;
                     break;
                 case DataLevel.AD:
-                    entityId = item.ad_id;
+                    entityId = item.ad_id || `ad_${Math.random().toString(36).substr(2, 9)}`;
                     entityName = `${item.campaign_name || "(?)"} > ${item.adset_name || "(?)"} > ${item.ad_name || "(Anúncio sem nome)"}`;
                     break;
                 default:
-                     entityId = item.account_id || 'unknown';
+                     entityId = safeAccountId;
                      entityName = "(Desconhecido)";
             }
             
@@ -103,7 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
             
             return {
-                id: `${entityId}_${item.date_start}`,
+                id: `${entityId}_${item.date_start}`, // Unique ID for React key
                 entityId: entityId,
                 name: entityName,
                 level: typedLevel,
