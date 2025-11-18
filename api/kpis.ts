@@ -30,6 +30,7 @@ export interface KpiData {
   costPerInlineLinkClick: number;
   results: number;
   costPerResult: number;
+  objective?: string;
   isPeriodTotal?: boolean;
 }
 
@@ -224,8 +225,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
 
                 // Priority List for "Results"
-                // We prioritize hard conversions (Purchase, Messaging, Leads) over generic Traffic/Awareness metrics
-                // This ensures Traffic campaigns that generate WhatsApp conversations show the Conversation count, not Clicks.
                 const conversionPriorities = [
                     'purchase',
                     'onsite_conversion.messaging_conversation_started_7d',
@@ -246,12 +245,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
 
                 // 2. If NO conversions found, fall back to Objective-based metrics
+                let isReachBased = false;
                 if (resultsCount === 0) {
                     if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
                         resultsCount = inlineLinkClicks;
                     } 
                     else if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
                         resultsCount = reach;
+                        isReachBased = true;
                     }
                 }
                 
@@ -259,7 +260,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
                 const cpc = clicks > 0 ? spend / clicks : 0;
                 const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
-                const costPerResult = resultsCount > 0 ? spend / resultsCount : 0;
+                
+                // Cost Per Result Calculation
+                // For Awareness/Reach campaigns, standard reporting (and user expectation) 
+                // is "Cost per 1,000 People Reached", not "Cost per 1 Person".
+                const costPerResult = resultsCount > 0 
+                    ? (spend / resultsCount) * (isReachBased ? 1000 : 1) 
+                    : 0;
                 
                 // Generate a unique ID. 
                 // For Summary data: entityId
@@ -285,6 +292,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     costPerInlineLinkClick: costPerInlineLinkClick,
                     results: resultsCount,
                     costPerResult: costPerResult,
+                    objective: objective,
                     isPeriodTotal: isPeriodTotal
                 };
             });
