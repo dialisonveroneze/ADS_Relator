@@ -36,13 +36,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const typedLevel = level as DataLevel;
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
     const datePreset = datePresetMap[dateRange];
+    const levelParam = levelMap[typedLevel];
 
     try {
-        // CORREÇÃO DEFINITIVA: A API da Meta retorna os campos de ID/Nome automaticamente com base no `level`.
-        // Pedir por eles explicitamente no `fields` causa um conflito e retorna uma lista vazia.
-        // Portanto, solicitamos APENAS as métricas desejadas.
-        const fields = 'spend,impressions';
-        const levelParam = levelMap[typedLevel];
+        // CORREÇÃO: Constrói a lista de campos dinamicamente com base no nível.
+        // Isso torna a requisição explícita e mais robusta do que confiar no comportamento
+        // implícito da API, que se mostrou instável.
+        let fields = 'spend,impressions';
+        if (typedLevel === DataLevel.CAMPAIGN) {
+            fields += ',campaign_name,campaign_id';
+        } else if (typedLevel === DataLevel.AD_SET) {
+            fields += ',adset_name,adset_id';
+        } else if (typedLevel === DataLevel.AD) {
+            fields += ',ad_name,ad_id';
+        }
         
         const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
         
@@ -61,10 +68,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let entityId: string;
             let entityName: string;
 
-            // Agora lemos os campos que a API nos fornece automaticamente.
             switch (typedLevel) {
                 case DataLevel.ACCOUNT:
-                    entityId = accountId;
+                    entityId = item.account_id;
                     entityName = `Resumo Diário`;
                     break;
                 case DataLevel.CAMPAIGN:
