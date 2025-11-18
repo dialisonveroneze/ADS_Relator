@@ -69,13 +69,51 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
         return sortableData;
     }, [data, sortConfig]);
 
+    // Calculate Totals
+    const totals = useMemo(() => {
+        if (data.length === 0) return null;
+
+        const sum = data.reduce((acc, item) => {
+            acc.amountSpent += item.amountSpent;
+            acc.impressions += item.impressions;
+            acc.reach += item.reach;
+            acc.clicks += item.clicks;
+            acc.inlineLinkClicks += item.inlineLinkClicks;
+            acc.results += item.results;
+            return acc;
+        }, {
+            amountSpent: 0,
+            impressions: 0,
+            reach: 0,
+            clicks: 0,
+            inlineLinkClicks: 0,
+            results: 0
+        });
+
+        // Calculate weighted averages for rates
+        const cpm = sum.impressions > 0 ? (sum.amountSpent / sum.impressions) * 1000 : 0;
+        const ctr = sum.impressions > 0 ? (sum.clicks / sum.impressions) * 100 : 0;
+        const cpc = sum.clicks > 0 ? sum.amountSpent / sum.clicks : 0;
+        const costPerInlineLinkClick = sum.inlineLinkClicks > 0 ? sum.amountSpent / sum.inlineLinkClicks : 0;
+        const costPerResult = sum.results > 0 ? sum.amountSpent / sum.results : 0;
+
+        return {
+            ...sum,
+            cpm,
+            ctr,
+            cpc,
+            costPerInlineLinkClick,
+            costPerResult,
+            name: "Total Geral"
+        };
+    }, [data]);
+
     const getSortIndicator = (key: SortableKeys) => {
         if (sortConfig.key !== key) {
             return null;
         }
         return sortConfig.direction === 'ascending' ? '▲' : '▼';
     };
-
 
     const renderSkeletonRows = () => {
         return Array.from({ length: 5 }).map((_, index) => (
@@ -87,6 +125,27 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
                 ))}
             </tr>
         ));
+    };
+
+    const renderCell = (item: any, key: SortableKeys) => {
+         switch(key) {
+            case 'amountSpent':
+            case 'cpm':
+            case 'cpc':
+            case 'costPerInlineLinkClick':
+            case 'costPerResult':
+                return formatCurrency(item[key]);
+            case 'impressions':
+            case 'reach':
+            case 'clicks':
+            case 'inlineLinkClicks':
+            case 'results':
+                return formatNumber(item[key]);
+            case 'ctr':
+                return formatPercent(item[key]);
+            default:
+                return item[key];
+         }
     };
 
     return (
@@ -135,6 +194,17 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
                                 </tr>
                             )}
                         </tbody>
+                        {!isLoading && totals && (
+                            <tfoot className="bg-gray-100 dark:bg-gray-900 font-bold text-gray-900 dark:text-white border-t-2 border-gray-300 dark:border-gray-600">
+                                <tr>
+                                    {headers.map(header => (
+                                        <td key={header.key} className="py-3 px-4 whitespace-nowrap">
+                                            {header.key === 'name' ? 'Total Geral' : renderCell(totals, header.key)}
+                                        </td>
+                                    ))}
+                                </tr>
+                            </tfoot>
+                        )}
                     </table>
                 </div>
             </div>
