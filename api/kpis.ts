@@ -215,24 +215,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const objective = item.objective;
                 const actions = item.actions || [];
                 
-                // Priority List for "Results" (Priority Stems)
-                // We use partial matching to catch variants like '_7d', '_1d', '_28d' or 'offsite_conversion.'
+                // Priority List for "Results"
+                // Specific 'onsite_conversion' keys are placed at the top to prevent broad stem matches
+                // from picking up smaller/incomplete data chunks.
                 const conversionPriorities = [
-                    'purchase',
-                    'messaging_conversation_started', // Covers 'onsite_conversion.messaging_conversation_started_7d', etc.
+                    'purchase', // Standard aggregate
+                    'onsite_conversion.messaging_conversation_started_7d', // Standard for messaging (High Priority)
+                    'onsite_conversion.messaging_conversation_started_28d',
+                    'onsite_conversion.messaging_conversation_started_1d',
                     'leads',
                     'lead',
                     'schedule',
                     'complete_registration',
                     'submit_application',
-                    'mobile_app_install'
+                    'mobile_app_install',
+                    'messaging_conversation_started' // Fallback catch-all stem
                 ];
 
                 // 1. Check for High Value Conversions FIRST
                 for (const priorityStem of conversionPriorities) {
-                    // A. First try EXACT match (e.g. 'purchase' or 'leads')
-                    // This is crucial for metrics like 'purchase' where Meta provides a pre-calculated aggregate.
-                    // If we skipped this and went straight to partial sum, we might double count (aggregate + breakdown).
+                    // A. First try EXACT match
+                    // This is crucial for keys that are already exact in the list
                     let exactMatch = actions.find((a: any) => a.action_type === priorityStem);
                     
                     if (exactMatch) {
@@ -240,14 +243,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         break; // Found aggregate, stop.
                     }
 
-                    // B. If no exact match, look for PARTIAL matches (e.g. 'messaging_conversation_started_7d')
-                    // AND sum them up. This fixes the issue where messaging results are split into 'click' and 'view'
-                    // attribution windows (e.g. 33 click + 7 view = 40 total).
-                    const partialMatches = actions.filter((a: any) => a.action_type.includes(priorityStem));
+                    // B. If no exact match, look for PARTIAL matches
+                    // Only use this for the generic fallback stems or stems not fully specified
+                    if (!priorityStem.startsWith('onsite_conversion.')) {
+                        const partialMatches = actions.filter((a: any) => a.action_type.includes(priorityStem));
 
-                    if (partialMatches.length > 0) {
-                        resultsCount = partialMatches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
-                        break; // Found matches for this priority, stop.
+                        if (partialMatches.length > 0) {
+                            resultsCount = partialMatches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
+                            break; // Found matches for this priority, stop.
+                        }
                     }
                 }
 
@@ -269,15 +273,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
                 
                 // Cost Per Result Calculation
-                // For Awareness/Reach campaigns, standard reporting (and user expectation) 
-                // is "Cost per 1,000 People Reached", not "Cost per 1 Person".
                 const costPerResult = resultsCount > 0 
                     ? (spend / resultsCount) * (isReachBased ? 1000 : 1) 
                     : 0;
                 
-                // Generate a unique ID. 
-                // For Summary data: entityId
-                // For Daily data: entityId + date
                 const uniqueId = isPeriodTotal 
                     ? `${entityId}_summary`
                     : `${entityId}_${item.date_start}`;

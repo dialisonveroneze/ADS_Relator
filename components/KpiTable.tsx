@@ -33,19 +33,20 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
     const formatPercent = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2 }).format(value / 100);
 
+    // Column Order: Name, AmountSpent, Impressions, Reach, Clicks (All), Link Clicks, Results, Cost Per Result, CTR, CPM, CPC
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
         { label: "Impressões", key: "impressions" },
-        { label: "CPM", key: "cpm" },
         { label: "Alcance", key: "reach" },
         { label: "Cliques (Todos)", key: "clicks" },
-        { label: "CPC (Todos)", key: "cpc" },
-        { label: "CTR (Todos)", key: "ctr" },
         { label: "Cliques no Link", key: "inlineLinkClicks" },
-        { label: "Custo p/ Clique (Link)", key: "costPerInlineLinkClick" },
         { label: "Resultados", key: "results" },
-        { label: "Custo p/ Resultado", key: "costPerResult" }
+        { label: "Custo p/ Resultado", key: "costPerResult" },
+        { label: "CTR (Todos)", key: "ctr" },
+        { label: "CPM", key: "cpm" },
+        { label: "CPC (Todos)", key: "cpc" },
+        { label: "Custo p/ Clique (Link)", key: "costPerInlineLinkClick" }
     ];
 
     const requestSort = (key: SortableKeys) => {
@@ -198,15 +199,15 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                     <td className="py-3 px-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{item.name}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.amountSpent)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.impressions)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpm)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.reach)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.clicks)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpc)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatPercent(item.ctr)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.inlineLinkClicks)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerInlineLinkClick)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap font-semibold text-blue-600 dark:text-blue-400">{formatNumber(item.results)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerResult)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatPercent(item.ctr)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpm)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpc)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerInlineLinkClick)}</td>
                                 </tr>
                             ))}
                             {!isLoading && sortedData.length === 0 && (
