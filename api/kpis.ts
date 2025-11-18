@@ -20,33 +20,6 @@ const datePresetMap: Record<DateRangeOption, string> = {
     'last_month': 'last_month',
 };
 
-// Constrói a lista de campos dinamicamente com base no nível,
-// garantindo que apenas campos válidos sejam solicitados.
-const getFieldsForLevel = (level: DataLevel): string => {
-    const baseFields = ['spend', 'impressions'];
-    let entityFields: string[] = [];
-
-    switch (level) {
-        case DataLevel.ACCOUNT:
-            // Para o nível da conta, os campos base são suficientes.
-            // A API já retorna account_id por padrão neste nível.
-            break;
-        case DataLevel.CAMPAIGN:
-            entityFields = ['campaign_id', 'campaign_name'];
-            break;
-        case DataLevel.AD_SET:
-            // Pedimos o nome da campanha para construir o nome hierárquico
-            entityFields = ['campaign_name', 'adset_id', 'adset_name'];
-            break;
-        case DataLevel.AD:
-             // Pedimos os nomes dos pais para construir o nome hierárquico
-            entityFields = ['campaign_name', 'adset_name', 'ad_id', 'ad_name'];
-            break;
-    }
-    return [...baseFields, ...entityFields].join(',');
-};
-
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
     const accessToken = cookies.meta_token;
@@ -64,7 +37,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
     const datePreset = datePresetMap[dateRange];
     const levelParam = levelMap[typedLevel];
-    const fields = getFieldsForLevel(typedLevel);
+    
+    // Solicitamos um superconjunto de campos. A API da Meta irá ignorar os campos
+    // que não são aplicáveis ao `level` solicitado, tornando esta abordagem mais robusta.
+    const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions';
 
     try {
         const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
