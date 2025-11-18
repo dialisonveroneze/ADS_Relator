@@ -71,15 +71,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timeRange = { since, until };
 
     try {
-        // Define os campos base, excluindo métricas calculadas (CTR, CPC, CPM) para maior estabilidade
-        const coreFields = 'spend,impressions,reach,clicks,inline_link_clicks';
-        const resultFields = 'results,cost_per_result'; // Apenas para níveis onde fazem sentido
-
-        let requestedFields = coreFields;
+        let requestedFields: string;
         
-        // **CORREÇÃO CRÍTICA**: Só solicita `results` para níveis onde são aplicáveis.
-        if (typedLevel !== DataLevel.ACCOUNT) {
-            requestedFields += `,${resultFields}`;
+        // **CORREÇÃO DEFINITIVA**: A API da Meta retorna dados vazios se campos como 'reach' ou 'clicks'
+        // forem solicitados com `time_increment=1` no nível da conta.
+        // A solução é pedir um conjunto mínimo de campos para o nível da conta e o conjunto completo para os outros níveis.
+        if (typedLevel === DataLevel.ACCOUNT) {
+            // Conjunto mínimo e garantido para o nível da conta
+            requestedFields = 'spend,impressions';
+        } else {
+            // Conjunto completo para níveis detalhados
+            requestedFields = 'spend,impressions,reach,clicks,inline_link_clicks,results,cost_per_result';
         }
 
         let dynamicFields = '';
@@ -145,16 +147,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Parse das métricas de resultado (apenas se foram solicitadas)
             let results = 0;
             let costPerResult = 0;
-            if (typedLevel !== DataLevel.ACCOUNT) {
-                if (item.results && Array.isArray(item.results)) {
-                    results = item.results.reduce((total, action) => total + parseInt(action.value || '0', 10), 0);
-                }
-                
-                if (item.cost_per_result && Array.isArray(item.cost_per_result) && item.cost_per_result.length > 0) {
-                    costPerResult = parseFloat(item.cost_per_result[0].value || '0');
-                } else if (results > 0) {
-                    costPerResult = spend / results;
-                }
+            if (item.results && Array.isArray(item.results)) {
+                results = item.results.reduce((total, action) => total + parseInt(action.value || '0', 10), 0);
+            }
+            if (item.cost_per_result && Array.isArray(item.cost_per_result) && item.cost_per_result.length > 0) {
+                 costPerResult = parseFloat(item.cost_per_result[0].value || '0');
+            } else if (results > 0) {
+                 costPerResult = spend / results;
             }
             
             return {
