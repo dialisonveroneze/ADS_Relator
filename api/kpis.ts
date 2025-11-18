@@ -39,17 +39,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const levelParam = levelMap[typedLevel];
 
     try {
-        // CORREÇÃO: Constrói a lista de campos dinamicamente com base no nível.
-        // Isso torna a requisição explícita e mais robusta do que confiar no comportamento
-        // implícito da API, que se mostrou instável.
-        let fields = 'spend,impressions';
-        if (typedLevel === DataLevel.CAMPAIGN) {
-            fields += ',campaign_name,campaign_id';
-        } else if (typedLevel === DataLevel.AD_SET) {
-            fields += ',adset_name,adset_id';
-        } else if (typedLevel === DataLevel.AD) {
-            fields += ',ad_name,ad_id';
-        }
+        // SOLUÇÃO SIMPLIFICADA E ROBUSTA:
+        // Solicitamos apenas as métricas essenciais. A API da Meta, com base no `level`
+        // especificado, retornará automaticamente os campos de ID e nome correspondentes
+        // (ex: campaign_id, campaign_name). Solicitar esses campos explicitamente
+        // estava causando um conflito e resultando em uma resposta vazia.
+        const fields = 'spend,impressions';
         
         const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
         
@@ -68,6 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let entityId: string;
             let entityName: string;
 
+            // A API retorna os campos de id/nome corretos com base no `level`.
             switch (typedLevel) {
                 case DataLevel.ACCOUNT:
                     entityId = item.account_id;
