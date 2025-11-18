@@ -224,16 +224,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Calculate Results based on actions
             let resultsCount = 0;
             const actions = item.actions || [];
-            // Common conversion actions
-            const conversionTypes = [
-                'purchase', 'lead', 'complete_registration', 'submit_application', 
-                'schedule', 'add_to_cart', 'initiate_checkout', 'contact', 
-                'subscribe', 'start_trial'
+            
+            // UPDATED LIST: Focusing on Primary Conversions and Messaging Conversations
+            // Excluding 'add_to_cart', 'initiate_checkout' to match standard "Results" columns better
+            const primaryConversions = [
+                'purchase', 
+                'lead', 
+                'complete_registration', 
+                'submit_application', 
+                'schedule', 
+                'mobile_app_install',
+                'onsite_conversion.messaging_conversation_started_7d', // Standard for Engagement/Messages
+                'contact'
             ];
             
             if (Array.isArray(actions)) {
                 actions.forEach((action: any) => {
-                     if (conversionTypes.includes(action.action_type) || action.action_type.startsWith('onsite_conversion')) {
+                     if (primaryConversions.includes(action.action_type)) {
                          resultsCount += parseFloat(action.value);
                      }
                 });
