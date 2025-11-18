@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { KpiData } from '../types';
 
@@ -22,11 +23,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
         { label: "Impressões", key: "impressions" },
-        { label: "Alcance", key: "reach" },
-        { label: "Cliques", key: "clicks" },
-        { label: "Cliques no Link", key: "linkClicks" },
-        { label: "CTR", key: "ctr" },
-        { label: "CPC", key: "cpc" },
         { label: "CPM", key: "cpm" }
     ];
 
@@ -109,11 +105,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
                             <td className="py-3 px-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{item.name}</td>
                             <td className="py-3 px-4">{formatCurrency(item.amountSpent)}</td>
                             <td className="py-3 px-4">{formatNumber(item.impressions)}</td>
-                            <td className="py-3 px-4">{formatNumber(item.reach)}</td>
-                            <td className="py-3 px-4">{formatNumber(item.clicks)}</td>
-                            <td className="py-3 px-4">{formatNumber(item.linkClicks)}</td>
-                            <td className="py-3 px-4">{item.ctr.toFixed(2)}%</td>
-                            <td className="py-3 px-4">{formatCurrency(item.cpc)}</td>
                             <td className="py-3 px-4">{formatCurrency(item.cpm)}</td>
                         </tr>
                     ))}

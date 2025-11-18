@@ -16,13 +16,6 @@ export interface KpiData {
   date: string;
   amountSpent: number;
   impressions: number;
-  reach: number;
-  clicks: number;
-  linkClicks: number;
-  results: number;
-  costPerResult: number;
-  ctr: number;
-  cpc: number;
   cpm: number;
 }
 

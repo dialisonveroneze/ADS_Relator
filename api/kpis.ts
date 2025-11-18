@@ -1,3 +1,4 @@
+
 // api/kpis.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
@@ -71,20 +72,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timeRange = { since, until };
 
     try {
-        let requestedFields: string;
-        
-        // CORREÇÃO DE ESTABILIDADE:
-        // 1. Campos instáveis ('results', 'cost_per_result') foram removidos da requisição.
-        //    Eles causam falhas silenciosas na API da Meta, retornando uma lista vazia.
-        // 2. A requisição é adaptativa: um conjunto mínimo para o nível de 'Conta' (que é mais
-        //    restritivo) e um conjunto maior para níveis mais detalhados.
-        if (typedLevel === DataLevel.ACCOUNT) {
-            // Conjunto mínimo e garantido para o nível da conta com time_increment=1
-            requestedFields = 'spend,impressions';
-        } else {
-            // Conjunto estendido e estável para níveis detalhados
-            requestedFields = 'spend,impressions,reach,clicks,inline_link_clicks';
-        }
+        // ESTRATÉGIA DE ESTABILIDADE MÁXIMA:
+        // A API da Meta pode retornar uma lista vazia silenciosamente se um campo solicitado
+        // não estiver disponível para a conta/nível/período. Para garantir que *sempre*
+        // tenhamos dados, solicitamos apenas os campos mais básicos e universais.
+        const requestedFields = 'spend,impressions';
 
         let dynamicFields = '';
         switch (typedLevel) {
@@ -136,14 +128,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                      entityName = `(ID: ${entityId})`;
             }
             
-            // Parse das métricas base
             const spend = parseFloat(item?.spend ?? '0');
             const impressions = parseInt(item?.impressions ?? '0', 10);
-            const clicks = parseInt(item?.clicks ?? '0', 10);
-
-            // Cálculo manual das métricas para maior robustez
-            const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-            const cpc = clicks > 0 ? spend / clicks : 0;
             const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
             
             return {
@@ -154,13 +140,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 date: item.date_start,
                 amountSpent: spend,
                 impressions: impressions,
-                reach: parseInt(item?.reach ?? '0', 10),
-                clicks: clicks,
-                linkClicks: parseInt(item?.inline_link_clicks ?? '0', 10),
-                results: 0, // Removido da API para estabilidade
-                costPerResult: 0, // Removido da API para estabilidade
-                ctr: ctr,
-                cpc: cpc,
                 cpm: cpm,
             };
         });

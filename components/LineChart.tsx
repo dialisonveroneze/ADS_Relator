@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { KpiData } from '../types';
 
@@ -6,7 +7,7 @@ declare const Chart: any;
 
 interface LineChartProps {
     data: KpiData[];
-    metric: keyof Pick<KpiData, 'amountSpent' | 'impressions' | 'results' | 'ctr'>;
+    metric: keyof Pick<KpiData, 'amountSpent' | 'impressions'>;
     label: string;
     isLoading: boolean;
 }
