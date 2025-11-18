@@ -169,7 +169,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         if (key === 'results') return "whitespace-nowrap font-semibold text-blue-600 dark:text-blue-400";
         return "whitespace-nowrap";
     };
-
+ 
     return (
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-lg mt-6 overflow-x-auto">
             <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4">Métricas Detalhadas</h3>
