@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     // Solicitamos um superconjunto de campos. A API da Meta irá ignorar os campos
     // que não são aplicáveis ao `level` solicitado, tornando esta abordagem mais robusta.
-    const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions';
+    const fields = 'account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions';
 
     try {
         let allInsights: any[] = [];
