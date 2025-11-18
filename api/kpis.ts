@@ -215,42 +215,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const objective = item.objective;
                 const actions = item.actions || [];
                 
-                // Priority List for "Results"
-                // Specific 'onsite_conversion' keys are placed at the top to prevent broad stem matches
-                // from picking up smaller/incomplete data chunks.
+                // Priority Configuration
+                // mode: 'exact_first' -> tries exact match, if found uses it (stops). Use for aggregates like 'purchase'.
+                // mode: 'sum_partial' -> sums ALL actions containing this stem. Use for split metrics like conversations.
                 const conversionPriorities = [
-                    'purchase', // Standard aggregate
-                    'onsite_conversion.messaging_conversation_started_7d', // Standard for messaging (High Priority)
-                    'onsite_conversion.messaging_conversation_started_28d',
-                    'onsite_conversion.messaging_conversation_started_1d',
-                    'leads',
-                    'lead',
-                    'schedule',
-                    'complete_registration',
-                    'submit_application',
-                    'mobile_app_install',
-                    'messaging_conversation_started' // Fallback catch-all stem
+                    { key: 'purchase', mode: 'exact_first' }, 
+                    { key: 'messaging_conversation_started', mode: 'sum_partial' }, // Sum all attribution windows for conversations
+                    { key: 'leads', mode: 'sum_partial' },
+                    { key: 'lead', mode: 'sum_partial' },
+                    { key: 'schedule', mode: 'sum_partial' },
+                    { key: 'complete_registration', mode: 'sum_partial' },
+                    { key: 'submit_application', mode: 'sum_partial' },
+                    { key: 'mobile_app_install', mode: 'sum_partial' }
                 ];
 
                 // 1. Check for High Value Conversions FIRST
-                for (const priorityStem of conversionPriorities) {
-                    // A. First try EXACT match
-                    // This is crucial for keys that are already exact in the list
-                    let exactMatch = actions.find((a: any) => a.action_type === priorityStem);
-                    
-                    if (exactMatch) {
-                        resultsCount = parseFloat(exactMatch.value);
-                        break; // Found aggregate, stop.
-                    }
-
-                    // B. If no exact match, look for PARTIAL matches
-                    // Only use this for the generic fallback stems or stems not fully specified
-                    if (!priorityStem.startsWith('onsite_conversion.')) {
-                        const partialMatches = actions.filter((a: any) => a.action_type.includes(priorityStem));
-
-                        if (partialMatches.length > 0) {
-                            resultsCount = partialMatches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
-                            break; // Found matches for this priority, stop.
+                for (const priority of conversionPriorities) {
+                    if (priority.mode === 'exact_first') {
+                        // Try exact match first (e.g. 'purchase' which is an aggregate)
+                        let exactMatch = actions.find((a: any) => a.action_type === priority.key);
+                        if (exactMatch) {
+                            resultsCount = parseFloat(exactMatch.value);
+                            break; 
+                        }
+                        // If no exact match, could check partials if needed, but for purchase strict is safer
+                    } else {
+                        // Sum all partial matches (e.g. '...started_7d' + '...started_1d')
+                        const matches = actions.filter((a: any) => a.action_type.includes(priority.key));
+                        if (matches.length > 0) {
+                            resultsCount = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
+                            break;
                         }
                     }
                 }

@@ -33,7 +33,9 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
     const formatPercent = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2 }).format(value / 100);
 
-    // Column Order: Name, AmountSpent, Impressions, Reach, Clicks (All), Link Clicks, Results, Cost Per Result, CTR, CPM, CPC
+    // Column Order Requested: 
+    // Nome, Valor Gasto, Impressões, Alcance, Cliques (Todos), Cliques no Link, 
+    // Resultados, Custo p/ Resultado, CTR (Todos), CPM, CPC (Todos)
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
@@ -46,7 +48,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         { label: "CTR (Todos)", key: "ctr" },
         { label: "CPM", key: "cpm" },
         { label: "CPC (Todos)", key: "cpc" },
-        { label: "Custo p/ Clique (Link)", key: "costPerInlineLinkClick" }
     ];
 
     const requestSort = (key: SortableKeys) => {
@@ -207,7 +208,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                     <td className="py-3 px-4 whitespace-nowrap">{formatPercent(item.ctr)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpm)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpc)}</td>
-                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerInlineLinkClick)}</td>
                                 </tr>
                             ))}
                             {!isLoading && sortedData.length === 0 && (
