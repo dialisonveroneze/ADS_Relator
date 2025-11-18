@@ -213,21 +213,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 // ----------- DYNAMIC RESULTS LOGIC -----------
                 let resultsCount = 0;
                 const objective = item.objective;
-                
                 const actions = item.actions || [];
                 
-                // Map all actions to a dictionary for easy lookup
-                const actionMap: Record<string, number> = {};
-                if (Array.isArray(actions)) {
-                    actions.forEach((action: any) => {
-                        actionMap[action.action_type] = parseFloat(action.value);
-                    });
-                }
-
-                // Priority List for "Results"
+                // Priority List for "Results" (Priority Stems)
+                // We use partial matching to catch variants like '_7d', '_1d', '_28d' or 'offsite_conversion.'
                 const conversionPriorities = [
                     'purchase',
-                    'onsite_conversion.messaging_conversation_started_7d',
+                    'messaging_conversation_started', // Covers 'onsite_conversion.messaging_conversation_started_7d', etc.
                     'leads',
                     'lead',
                     'schedule',
@@ -237,9 +229,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 ];
 
                 // 1. Check for High Value Conversions FIRST
-                for (const actionType of conversionPriorities) {
-                    if (actionMap[actionType] && actionMap[actionType] > 0) {
-                        resultsCount = actionMap[actionType];
+                for (const priorityStem of conversionPriorities) {
+                    // First try exact match (e.g. 'purchase')
+                    let match = actions.find((a: any) => a.action_type === priorityStem);
+                    
+                    // If no exact match, try partial match (e.g. 'offsite_conversion.fb_pixel_purchase')
+                    if (!match) {
+                        match = actions.find((a: any) => a.action_type.includes(priorityStem));
+                    }
+
+                    if (match) {
+                        resultsCount = parseFloat(match.value);
                         break; // STOP after finding the highest priority metric
                     }
                 }
