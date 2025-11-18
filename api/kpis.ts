@@ -11,6 +11,15 @@ const levelMap: Record<DataLevel, string> = {
   [DataLevel.AD]: 'ad',
 };
 
+// Mapeia nossas opções de período para os presets da API da Meta
+const datePresetMap: Record<DateRangeOption, string> = {
+    'last_7_days': 'last_7d',
+    'last_14_days': 'last_14d',
+    'last_30_days': 'last_30d',
+    'this_month': 'this_month',
+    'last_month': 'last_month',
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
     const accessToken = cookies.meta_token;
@@ -26,55 +35,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const typedLevel = level as DataLevel;
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
-
-    let since: string;
-    let until: string;
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0); // Normaliza para o início do dia em UTC
-
-    switch (dateRange) {
-        case 'last_7_days':
-            until = today.toISOString().split('T')[0];
-            const sevenDaysAgo = new Date(today);
-            sevenDaysAgo.setUTCDate(today.getUTCDate() - 6);
-            since = sevenDaysAgo.toISOString().split('T')[0];
-            break;
-        case 'last_30_days':
-            until = today.toISOString().split('T')[0];
-            const thirtyDaysAgo = new Date(today);
-            thirtyDaysAgo.setUTCDate(today.getUTCDate() - 29);
-            since = thirtyDaysAgo.toISOString().split('T')[0];
-            break;
-        case 'this_month':
-            until = today.toISOString().split('T')[0];
-            const firstDayThisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-            since = firstDayThisMonth.toISOString().split('T')[0];
-            break;
-        case 'last_month':
-            const firstDayCurrentMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-            const lastDayLastMonth = new Date(firstDayCurrentMonth);
-            lastDayLastMonth.setUTCDate(0); // Vai para o último dia do mês anterior
-            until = lastDayLastMonth.toISOString().split('T')[0];
-
-            const firstDayLastMonth = new Date(Date.UTC(lastDayLastMonth.getUTCFullYear(), lastDayLastMonth.getUTCMonth(), 1));
-            since = firstDayLastMonth.toISOString().split('T')[0];
-            break;
-        case 'last_14_days':
-        default:
-            until = today.toISOString().split('T')[0];
-            const fourteenDaysAgo = new Date(today);
-            fourteenDaysAgo.setUTCDate(today.getUTCDate() - 13);
-            since = fourteenDaysAgo.toISOString().split('T')[0];
-            break;
-    }
-    
-    const timeRange = { since, until };
+    const datePreset = datePresetMap[dateRange];
 
     try {
         // ESTRATÉGIA DE ESTABILIDADE MÁXIMA:
-        // A API da Meta pode retornar uma lista vazia silenciosamente se um campo solicitado
-        // não estiver disponível para a conta/nível/período. Para garantir que *sempre*
-        // tenhamos dados, solicitamos apenas os campos mais básicos e universais.
+        // Solicitamos apenas os campos mais básicos e universais para garantir que os dados
+        // sejam sempre retornados, evitando falhas silenciosas da API da Meta.
         const requestedFields = 'spend,impressions';
 
         let dynamicFields = '';
@@ -93,7 +59,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const fields = requestedFields + dynamicFields;
         const levelParam = levelMap[typedLevel];
         
-        let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&time_range=${JSON.stringify(timeRange)}&time_increment=1&limit=500&access_token=${accessToken}`;
+        // Usando `date_preset` em vez de `time_range` para maior robustez.
+        const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
         
         const metaResponse = await fetch(url);
         const data = await metaResponse.json();
