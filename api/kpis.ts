@@ -38,28 +38,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const datePreset = datePresetMap[dateRange];
 
     try {
-        // ESTRATÉGIA DE ESTABILIDADE MÁXIMA:
-        // Solicitamos apenas os campos mais básicos e universais para garantir que os dados
-        // sejam sempre retornados, evitando falhas silenciosas da API da Meta.
-        const requestedFields = 'spend,impressions';
-
-        let dynamicFields = '';
-        switch (typedLevel) {
-            case DataLevel.CAMPAIGN:
-                dynamicFields = ',campaign_id,campaign_name';
-                break;
-            case DataLevel.AD_SET:
-                dynamicFields = ',adset_id,adset_name,campaign_id,campaign_name';
-                break;
-            case DataLevel.AD:
-                dynamicFields = ',ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name';
-                break;
-        }
-        
-        const fields = requestedFields + dynamicFields;
+        // CORREÇÃO DEFINITIVA: A API da Meta retorna os campos de ID/Nome automaticamente com base no `level`.
+        // Pedir por eles explicitamente no `fields` causa um conflito e retorna uma lista vazia.
+        // Portanto, solicitamos APENAS as métricas desejadas.
+        const fields = 'spend,impressions';
         const levelParam = levelMap[typedLevel];
         
-        // Usando `date_preset` em vez de `time_range` para maior robustez.
         const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
         
         const metaResponse = await fetch(url);
@@ -74,24 +58,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         
         const formattedKpi: KpiData[] = (data.data || []).map((item: any) => {
-            const entityId = item[`${levelParam}_id`] || accountId;
+            let entityId: string;
             let entityName: string;
 
+            // Agora lemos os campos que a API nos fornece automaticamente.
             switch (typedLevel) {
                 case DataLevel.ACCOUNT:
+                    entityId = accountId;
                     entityName = `Resumo Diário`;
                     break;
                 case DataLevel.CAMPAIGN:
-                    entityName = item.campaign_name || `(Sem Nome - ID: ${entityId})`;
+                    entityId = item.campaign_id;
+                    entityName = item.campaign_name || `(Campanha sem nome)`;
                     break;
                 case DataLevel.AD_SET:
-                    entityName = `${item.campaign_name || '(Campanha sem nome)'} > ${item.adset_name || `(Grupo sem nome - ID: ${entityId})`}`;
+                    entityId = item.adset_id;
+                    entityName = item.adset_name || `(Grupo sem nome)`;
                     break;
                 case DataLevel.AD:
-                    entityName = `${item.campaign_name || '(Campanha sem nome)'} > ${item.adset_name || '(Grupo sem nome)'} > ${item.ad_name || `(Anúncio sem nome - ID: ${entityId})`}`;
+                    entityId = item.ad_id;
+                    entityName = item.ad_name || `(Anúncio sem nome)`;
                     break;
                 default:
-                     entityName = `(ID: ${entityId})`;
+                     entityId = 'unknown';
+                     entityName = `(Desconhecido)`;
             }
             
             const spend = parseFloat(item?.spend ?? '0');
