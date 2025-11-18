@@ -212,44 +212,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 // ----------- DYNAMIC RESULTS LOGIC -----------
                 let resultsCount = 0;
                 const objective = item.objective;
+                
+                const actions = item.actions || [];
+                
+                // Map all actions to a dictionary for easy lookup
+                const actionMap: Record<string, number> = {};
+                if (Array.isArray(actions)) {
+                    actions.forEach((action: any) => {
+                        actionMap[action.action_type] = parseFloat(action.value);
+                    });
+                }
 
-                if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
-                    resultsCount = reach;
-                } 
-                else if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
-                    resultsCount = inlineLinkClicks;
-                } 
-                else {
-                    const actions = item.actions || [];
-                    
-                    // Map all actions to a dictionary for easy lookup
-                    const actionMap: Record<string, number> = {};
-                    if (Array.isArray(actions)) {
-                        actions.forEach((action: any) => {
-                            actionMap[action.action_type] = parseFloat(action.value);
-                        });
+                // Priority List for "Results"
+                // We prioritize hard conversions (Purchase, Messaging, Leads) over generic Traffic/Awareness metrics
+                // This ensures Traffic campaigns that generate WhatsApp conversations show the Conversation count, not Clicks.
+                const conversionPriorities = [
+                    'purchase',
+                    'onsite_conversion.messaging_conversation_started_7d',
+                    'leads',
+                    'lead',
+                    'schedule',
+                    'complete_registration',
+                    'submit_application',
+                    'mobile_app_install'
+                ];
+
+                // 1. Check for High Value Conversions FIRST
+                for (const actionType of conversionPriorities) {
+                    if (actionMap[actionType] && actionMap[actionType] > 0) {
+                        resultsCount = actionMap[actionType];
+                        break; // STOP after finding the highest priority metric
                     }
+                }
 
-                    // Priority List for "Results"
-                    // We take the first match found. This prevents summing overlapping metrics 
-                    // (e.g. a Messaging campaign often fires 'contact' pixel events too. Summing them creates duplication).
-                    const resultPriorities = [
-                        'purchase',
-                        'onsite_conversion.messaging_conversation_started_7d',
-                        'leads',
-                        'lead',
-                        'schedule',
-                        'complete_registration',
-                        'submit_application',
-                        'mobile_app_install',
-                        'contact' // Lowest priority
-                    ];
-
-                    for (const actionType of resultPriorities) {
-                        if (actionMap[actionType] && actionMap[actionType] > 0) {
-                            resultsCount = actionMap[actionType];
-                            break; // STOP after finding the highest priority metric
-                        }
+                // 2. If NO conversions found, fall back to Objective-based metrics
+                if (resultsCount === 0) {
+                    if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
+                        resultsCount = inlineLinkClicks;
+                    } 
+                    else if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
+                        resultsCount = reach;
                     }
                 }
                 
