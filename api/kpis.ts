@@ -4,14 +4,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
 import { KpiData, DataLevel, DateRangeOption } from '../types';
 
-// Mapeia nossos níveis de dados para os níveis da API da Meta
-const levelMap: Record<DataLevel, string> = {
-  [DataLevel.ACCOUNT]: 'account',
-  [DataLevel.CAMPAIGN]: 'campaign',
-  [DataLevel.AD_SET]: 'adset',
-  [DataLevel.AD]: 'ad',
-};
-
 // Mapeia nossas opções de período para os presets da API da Meta
 const datePresetMap: Record<DateRangeOption, string> = {
     'last_7_days': 'last_7d',
@@ -31,13 +23,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { accountId, level, dateRange: dateRangeQuery } = req.query;
 
-    if (!accountId || typeof accountId !== 'string' || !level || typeof level !== 'string' || !Object.values(DataLevel).includes(level as DataLevel)) {
+    // Validate required parameters
+    if (!accountId || typeof accountId !== 'string' || !level || typeof level !== 'string') {
         return res.status(400).json({ message: 'ID da conta e nível são obrigatórios.' });
     }
+    
+    // Ensure the level is valid based on our enum
+    if (!Object.values(DataLevel).includes(level as DataLevel)) {
+         return res.status(400).json({ message: 'Nível de dados inválido.' });
+    }
+
     const typedLevel = level as DataLevel;
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
     const datePreset = datePresetMap[dateRange];
-    const levelParam = levelMap[typedLevel];
+    
+    // The API level parameter now matches our enum directly (account, campaign, adset, ad)
+    const levelParam = typedLevel;
     
     // Define fields based on level to avoid requesting invalid fields for the aggregation level
     let fieldsList = ['spend', 'impressions', 'date_start', 'date_stop'];
@@ -61,7 +62,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
         let allInsights: any[] = [];
-        let url: string | null = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
+        // Reduced limit to 100 to prevent potential timeouts or issues with large payloads
+        let url: string | null = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=100&access_token=${accessToken}`;
 
         // Loop de paginação para buscar todos os insights
         while (url) {
@@ -94,7 +96,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let entityName: string;
 
             // Fallback ID logic: If the specific ID field is missing, use accountId or generate a unique placeholder
-            // This protects against cases where API returns partial objects
             const safeAccountId = item.account_id || accountId;
 
             switch (typedLevel) {

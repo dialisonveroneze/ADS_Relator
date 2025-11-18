@@ -1,3 +1,4 @@
+
 export interface AdAccount {
   id: string;
   name: string;
@@ -19,10 +20,17 @@ export interface KpiData {
 }
 
 export enum DataLevel {
-  ACCOUNT = 'Conta',
-  CAMPAIGN = 'Campanha',
-  AD_SET = 'Grupo de Anúncios',
-  AD = 'Anúncio',
+  ACCOUNT = 'account',
+  CAMPAIGN = 'campaign',
+  AD_SET = 'adset',
+  AD = 'ad',
 }
+
+export const DATA_LEVEL_LABELS: Record<DataLevel, string> = {
+  [DataLevel.ACCOUNT]: 'Conta',
+  [DataLevel.CAMPAIGN]: 'Campanha',
+  [DataLevel.AD_SET]: 'Grupo de Anúncios',
+  [DataLevel.AD]: 'Anúncio',
+};
 
 export type DateRangeOption = 'last_7_days' | 'last_14_days' | 'last_30_days' | 'this_month' | 'last_month';

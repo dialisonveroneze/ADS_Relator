@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Header from './components/Header';
 import BalanceList from './components/BalanceList';
@@ -6,7 +7,7 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
-import { AdAccount, KpiData, DataLevel, DateRangeOption } from './types';
+import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption } from './types';
 
 const chartMetrics = {
     amountSpent: { label: 'Valor Gasto' },
@@ -172,7 +173,7 @@ const App: React.FC = () => {
                     <button
                         key={level} onClick={() => setSelectedLevel(level)} disabled={disabled}
                         className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${selectedLevel === level ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >{level}</button>
+                    >{DATA_LEVEL_LABELS[level]}</button>
                 ))}
             </div>
         </div>
