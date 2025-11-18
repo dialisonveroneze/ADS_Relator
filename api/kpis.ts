@@ -40,21 +40,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
         // SOLUÇÃO ROBUSTA:
-        // Construímos a lista de campos dinamicamente. Para cada nível,
-        // pedimos explicitamente o ID e o nome correspondentes, além das métricas.
-        // Isso remove a ambiguidade e garante que a API retorne os dados corretos.
-        let fields = 'spend,impressions';
-        switch (typedLevel) {
-            case DataLevel.CAMPAIGN:
-                fields += ',campaign_id,campaign_name';
-                break;
-            case DataLevel.AD_SET:
-                fields += ',adset_id,adset_name';
-                break;
-            case DataLevel.AD:
-                fields += ',ad_id,ad_name';
-                break;
-        }
+        // Solicitamos um superconjunto de todos os campos de identificação possíveis.
+        // A API da Meta ignora os campos que não são aplicáveis ao `level` solicitado,
+        // tornando esta abordagem muito mais estável do que construir a lista de campos dinamicamente.
+        const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions';
         
         const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
         
@@ -91,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     entityName = item.ad_name || `(Anúncio sem nome)`;
                     break;
                 default:
-                     entityId = 'unknown';
+                     entityId = item.account_id || 'unknown';
                      entityName = `(Desconhecido)`;
             }
             
