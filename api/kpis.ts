@@ -73,15 +73,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         let requestedFields: string;
         
-        // **CORREÇÃO DEFINITIVA**: A API da Meta retorna dados vazios se campos como 'reach' ou 'clicks'
-        // forem solicitados com `time_increment=1` no nível da conta.
-        // A solução é pedir um conjunto mínimo de campos para o nível da conta e o conjunto completo para os outros níveis.
+        // CORREÇÃO DE ESTABILIDADE:
+        // 1. Campos instáveis ('results', 'cost_per_result') foram removidos da requisição.
+        //    Eles causam falhas silenciosas na API da Meta, retornando uma lista vazia.
+        // 2. A requisição é adaptativa: um conjunto mínimo para o nível de 'Conta' (que é mais
+        //    restritivo) e um conjunto maior para níveis mais detalhados.
         if (typedLevel === DataLevel.ACCOUNT) {
-            // Conjunto mínimo e garantido para o nível da conta
+            // Conjunto mínimo e garantido para o nível da conta com time_increment=1
             requestedFields = 'spend,impressions';
         } else {
-            // Conjunto completo para níveis detalhados
-            requestedFields = 'spend,impressions,reach,clicks,inline_link_clicks,results,cost_per_result';
+            // Conjunto estendido e estável para níveis detalhados
+            requestedFields = 'spend,impressions,reach,clicks,inline_link_clicks';
         }
 
         let dynamicFields = '';
@@ -144,18 +146,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const cpc = clicks > 0 ? spend / clicks : 0;
             const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
             
-            // Parse das métricas de resultado (apenas se foram solicitadas)
-            let results = 0;
-            let costPerResult = 0;
-            if (item.results && Array.isArray(item.results)) {
-                results = item.results.reduce((total, action) => total + parseInt(action.value || '0', 10), 0);
-            }
-            if (item.cost_per_result && Array.isArray(item.cost_per_result) && item.cost_per_result.length > 0) {
-                 costPerResult = parseFloat(item.cost_per_result[0].value || '0');
-            } else if (results > 0) {
-                 costPerResult = spend / results;
-            }
-            
             return {
                 id: `${entityId}_${item.date_start}`,
                 entityId: entityId,
@@ -167,8 +157,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 reach: parseInt(item?.reach ?? '0', 10),
                 clicks: clicks,
                 linkClicks: parseInt(item?.inline_link_clicks ?? '0', 10),
-                results: results,
-                costPerResult: costPerResult,
+                results: 0, // Removido da API para estabilidade
+                costPerResult: 0, // Removido da API para estabilidade
                 ctr: ctr,
                 cpc: cpc,
                 cpm: cpm,

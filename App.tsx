@@ -11,7 +11,6 @@ import { AdAccount, KpiData, DataLevel, DateRangeOption } from './types';
 const chartMetrics = {
     amountSpent: { label: 'Valor Gasto' },
     impressions: { label: 'Impressões' },
-    results: { label: 'Resultados' },
     ctr: { label: 'CTR (%)' },
 };
 type ChartMetric = keyof typeof chartMetrics;
