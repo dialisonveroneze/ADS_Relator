@@ -1,7 +1,27 @@
 // api/kpis.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
-import { KpiData, DataLevel, DateRangeOption } from '../types';
+
+// Definindo tipos localmente para evitar erros de resolução de módulo no ambiente serverless (Vercel)
+export enum DataLevel {
+  ACCOUNT = 'account',
+  CAMPAIGN = 'campaign',
+  AD_SET = 'adset',
+  AD = 'ad',
+}
+
+export type DateRangeOption = 'last_7_days' | 'last_14_days' | 'last_30_days' | 'this_month' | 'last_month';
+
+export interface KpiData {
+  id: string;
+  entityId: string;
+  name: string;
+  level: DataLevel;
+  date: string;
+  amountSpent: number;
+  impressions: number;
+  cpm: number;
+}
 
 // Mapeia nossas opções de período para os presets da API da Meta
 const datePresetMap: Record<DateRangeOption, string> = {
@@ -63,8 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         let allData: any[] = [];
         
         // REMOVED FILTERING: We allow all data to pass through, even if impressions are 0.
-        // Filtering on the backend was causing valid rows (spend > 0, imp = 0) to be dropped,
-        // resulting in empty charts.
+        // Filtering on the backend was causing valid rows (spend > 0, imp = 0) to be dropped.
         
         // We use date_preset for everything now as it is safer than manual time_range calculations regarding timezones.
         // We enable time_increment=1 only for short ranges (last_X_days) to populate the chart.

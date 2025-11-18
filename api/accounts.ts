@@ -1,7 +1,16 @@
 // api/accounts.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
-import { AdAccount } from '../types';
+
+// Definindo interface localmente para evitar erro de importação no ambiente serverless
+export interface AdAccount {
+  id: string;
+  name: string;
+  balance: number;
+  spendingLimit: number;
+  amountSpent: number;
+  currency: string;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
