@@ -32,15 +32,6 @@ export interface KpiData {
   costPerResult: number;
 }
 
-// Mapeia nossas opções de período para os presets da API da Meta
-const datePresetMap: Record<DateRangeOption, string> = {
-    'last_7_days': 'last_7d',
-    'last_14_days': 'last_14d',
-    'last_30_days': 'last_30d',
-    'this_month': 'this_month',
-    'last_month': 'last_month',
-};
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
     const accessToken = cookies.meta_token;
@@ -88,14 +79,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const fields = fieldsList.join(',');
 
+    // Helper function to format date as YYYY-MM-DD
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+
+    // Calculate time_range manually to ensure compatibility with time_increment=1
+    // Using time_range instead of date_preset fixes issues with monthly views returning empty data when broken down by day.
+    const today = new Date();
+    let since: string;
+    let until: string = formatDate(today);
+
+    switch (dateRange) {
+        case 'last_7_days': {
+            const d = new Date(today);
+            d.setDate(today.getDate() - 7);
+            since = formatDate(d);
+            break;
+        }
+        case 'last_14_days': {
+            const d = new Date(today);
+            d.setDate(today.getDate() - 14);
+            since = formatDate(d);
+            break;
+        }
+        case 'last_30_days': {
+            const d = new Date(today);
+            d.setDate(today.getDate() - 30);
+            since = formatDate(d);
+            break;
+        }
+        case 'this_month': {
+            const d = new Date(today.getFullYear(), today.getMonth(), 1);
+            since = formatDate(d);
+            break;
+        }
+        case 'last_month': {
+            // First day of previous month
+            const firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            // Last day of previous month (day 0 of current month)
+            const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+            since = formatDate(firstDay);
+            until = formatDate(lastDay);
+            break;
+        }
+        default: {
+            // Default fallback
+            const d = new Date(today);
+            d.setDate(today.getDate() - 14);
+            since = formatDate(d);
+        }
+    }
+
+    const timeRangeStr = JSON.stringify({ since, until });
+
     // Helper function to fetch data from Meta
-    const fetchInsights = async (preset: string, enableBreakdown: boolean) => {
+    const fetchInsights = async (enableBreakdown: boolean) => {
         let allData: any[] = [];
         
         let url = `https://graph.facebook.com/v19.0/${accountId}/insights?` +
                   `level=${levelParam}` +
                   `&fields=${fields}` +
-                  `&date_preset=${preset}` +
+                  `&time_range=${timeRangeStr}` + 
                   `${enableBreakdown ? '&time_increment=1' : ''}` +
                   `&limit=100&access_token=${accessToken}`;
 
@@ -117,27 +160,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     try {
-        const preset = datePresetMap[dateRange];
-        
-        const tryDailyBreakdown = !['this_month', 'last_month'].includes(dateRange);
         
         let allInsights: any[] = [];
-
-        if (tryDailyBreakdown) {
-            try {
-                // Attempt 1: Get daily data for the chart
-                allInsights = await fetchInsights(preset, true);
-            } catch (err: any) {
-                if (err.code === 190) throw err; // Auth error, fail immediately
-                console.warn("Daily fetch failed, falling back to aggregate.", err.message);
-            }
+        
+        // Always try to fetch daily breakdown first to populate the chart
+        // Since we are using explicit time_range, this should work for 'this_month' and 'last_month' too.
+        try {
+            allInsights = await fetchInsights(true);
+        } catch (err: any) {
+            if (err.code === 190) throw err; // Auth error, fail immediately
+            console.warn("Daily fetch failed, falling back to aggregate.", err.message);
         }
 
         // FALLBACK / AGGREGATE MODE
+        // If daily fetch returned no data (or failed silently), try fetching without breakdown to at least show the table totals.
         if (allInsights.length === 0) {
             console.log("Fetching aggregate data (fallback)...");
             try {
-                allInsights = await fetchInsights(preset, false);
+                allInsights = await fetchInsights(false);
             } catch (retryErr) {
                 console.error("Fallback fetch failed", retryErr);
             }
