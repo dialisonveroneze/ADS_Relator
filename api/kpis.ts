@@ -43,25 +43,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fields = 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions';
 
     try {
-        const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
-        
-        const metaResponse = await fetch(url);
-        const data = await metaResponse.json();
+        let allInsights: any[] = [];
+        let url: string | null = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=500&access_token=${accessToken}`;
 
-        if (data.error) {
-            console.error("Erro da API da Meta:", data.error);
-            if (data.error.code === 190) {
-                 return res.status(401).json({ message: 'Token de acesso inválido ou expirado.' });
+        // Loop de paginação para buscar todos os insights
+        while (url) {
+            const metaResponse = await fetch(url);
+            const data = await metaResponse.json();
+
+            if (data.error) {
+                console.error("Erro da API da Meta:", data.error);
+                if (data.error.code === 190) {
+                     return res.status(401).json({ message: 'Token de acesso inválido ou expirado.' });
+                }
+                return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
             }
-            return res.status(500).json({ message: data.error.message || 'Erro ao buscar dados da Meta.' });
+            
+            if (data.data) {
+                allInsights = allInsights.concat(data.data);
+            }
+            
+            // Verifica se existe uma próxima página
+            url = data.paging && data.paging.next ? data.paging.next : null;
         }
         
-        if (!data.data) {
+        if (allInsights.length === 0) {
              console.warn("API da Meta retornou sucesso mas sem dados (data.data está ausente).", { accountId, level, dateRange });
              return res.status(200).json([]);
         }
 
-        const formattedKpi: KpiData[] = data.data.map((item: any) => {
+        const formattedKpi: KpiData[] = allInsights.map((item: any) => {
             let entityId: string;
             let entityName: string;
 
