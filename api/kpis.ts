@@ -215,36 +215,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const objective = item.objective;
                 const actions = item.actions || [];
                 
-                // Priority Configuration
-                // mode: 'exact_first' -> tries exact match, if found uses it (stops). Use for aggregates like 'purchase'.
-                // mode: 'sum_partial' -> sums ALL actions containing this stem. Use for split metrics like conversations.
-                const conversionPriorities = [
-                    { key: 'purchase', mode: 'exact_first' }, 
-                    { key: 'messaging_conversation_started', mode: 'sum_partial' }, // Sum all attribution windows for conversations
-                    { key: 'leads', mode: 'sum_partial' },
-                    { key: 'lead', mode: 'sum_partial' },
-                    { key: 'schedule', mode: 'sum_partial' },
-                    { key: 'complete_registration', mode: 'sum_partial' },
-                    { key: 'submit_application', mode: 'sum_partial' },
-                    { key: 'mobile_app_install', mode: 'sum_partial' }
-                ];
+                // Priority Configuration: Dynamic based on Objective
+                let conversionPriorities: { key: string, mode: 'exact_first' | 'sum_partial' }[] = [];
 
-                // 1. Check for High Value Conversions FIRST
+                // Common conversion types
+                const conversions = [
+                    { key: 'messaging_conversation_started', mode: 'sum_partial' as const },
+                    { key: 'leads', mode: 'sum_partial' as const },
+                    { key: 'lead', mode: 'sum_partial' as const },
+                    { key: 'purchase', mode: 'exact_first' as const },
+                    { key: 'schedule', mode: 'sum_partial' as const },
+                    { key: 'complete_registration', mode: 'sum_partial' as const },
+                    { key: 'submit_application', mode: 'sum_partial' as const },
+                    { key: 'mobile_app_install', mode: 'sum_partial' as const }
+                ];
+                
+                // Determine priority order
+                if (objective === 'OUTCOME_ENGAGEMENT' || objective === 'OUTCOME_TRAFFIC') {
+                    // For Engagement/Traffic, prioritize Conversations first
+                    conversionPriorities = [
+                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
+                        { key: 'leads', mode: 'sum_partial' },
+                        { key: 'lead', mode: 'sum_partial' },
+                        { key: 'purchase', mode: 'exact_first' },
+                        { key: 'schedule', mode: 'sum_partial' },
+                        { key: 'complete_registration', mode: 'sum_partial' }
+                    ];
+                } else if (objective === 'OUTCOME_SALES') {
+                    // For Sales, prioritize Purchase
+                    conversionPriorities = [
+                        { key: 'purchase', mode: 'exact_first' },
+                        { key: 'leads', mode: 'sum_partial' },
+                        { key: 'lead', mode: 'sum_partial' },
+                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
+                         // ...others
+                         ...conversions.filter(c => !['purchase', 'leads', 'lead', 'messaging_conversation_started'].includes(c.key))
+                    ];
+                } else {
+                    // Default / Leads / Awareness
+                     conversionPriorities = [
+                        { key: 'leads', mode: 'sum_partial' },
+                        { key: 'lead', mode: 'sum_partial' },
+                        { key: 'purchase', mode: 'exact_first' },
+                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
+                        ...conversions.filter(c => !['purchase', 'leads', 'lead', 'messaging_conversation_started'].includes(c.key))
+                     ];
+                }
+
+                // 1. Check for High Value Conversions
                 for (const priority of conversionPriorities) {
                     if (priority.mode === 'exact_first') {
                         // Try exact match first (e.g. 'purchase' which is an aggregate)
                         let exactMatch = actions.find((a: any) => a.action_type === priority.key);
                         if (exactMatch) {
                             resultsCount = parseFloat(exactMatch.value);
-                            break; 
+                            if (resultsCount > 0) break; // Only break if we found a positive value
                         }
-                        // If no exact match, could check partials if needed, but for purchase strict is safer
                     } else {
                         // Sum all partial matches (e.g. '...started_7d' + '...started_1d')
                         const matches = actions.filter((a: any) => a.action_type.includes(priority.key));
                         if (matches.length > 0) {
-                            resultsCount = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
-                            break;
+                            const sum = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
+                            if (sum > 0) {
+                                resultsCount = sum;
+                                break;
+                            }
                         }
                     }
                 }

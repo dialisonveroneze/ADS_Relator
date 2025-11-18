@@ -35,7 +35,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
 
     // Column Order Requested: 
     // Nome, Valor Gasto, Impressões, Alcance, Cliques (Todos), Cliques no Link, 
-    // Resultados, Custo p/ Resultado, CTR (Todos), CPM, CPC (Todos)
+    // Resultados, Custo p/ Resultado, CTR (Todos), CPM, CPC (Todos), CPC (Link)
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
@@ -48,6 +48,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         { label: "CTR (Todos)", key: "ctr" },
         { label: "CPM", key: "cpm" },
         { label: "CPC (Todos)", key: "cpc" },
+        { label: "CPC (Link)", key: "costPerInlineLinkClick" },
     ];
 
     const requestSort = (key: SortableKeys) => {
@@ -208,6 +209,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                     <td className="py-3 px-4 whitespace-nowrap">{formatPercent(item.ctr)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpm)}</td>
                                     <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpc)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerInlineLinkClick)}</td>
                                 </tr>
                             ))}
                             {!isLoading && sortedData.length === 0 && (
