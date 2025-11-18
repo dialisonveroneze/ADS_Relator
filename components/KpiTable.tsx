@@ -19,7 +19,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     });
 
     const formatCurrency = (value: number) => {
-        // If value is very small (like cost per reach), show more decimals
+        // Se o valor for muito pequeno (ex: custo por alcance), mostra mais casas decimais
         if (value > 0 && value < 0.01) {
             return new Intl.NumberFormat('pt-BR', { 
                 style: 'currency', 
@@ -33,9 +33,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
     const formatPercent = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2 }).format(value / 100);
 
-    // Order Requested: 
-    // Nome, Gasto, Impressões, Alcance, Cliques (Todos), Cliques no Link, 
-    // Resultados, Custo p/ Resultado, CTR, CPM, CPC, CPC (Link)
+    // ORDEM DEFINITIVA DAS COLUNAS
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
@@ -85,7 +83,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         return sortableData;
     }, [data, sortConfig]);
 
-    // Calculate Totals
+    // Calcular Totais
     const totals = useMemo(() => {
         if (data.length === 0) return null;
 
@@ -106,7 +104,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
             results: 0
         });
 
-        // Calculate weighted averages for rates
+        // Calcular médias ponderadas
         const cpm = sum.impressions > 0 ? (sum.amountSpent / sum.impressions) * 1000 : 0;
         const ctr = sum.impressions > 0 ? (sum.clicks / sum.impressions) * 100 : 0;
         const cpc = sum.clicks > 0 ? sum.amountSpent / sum.clicks : 0;
