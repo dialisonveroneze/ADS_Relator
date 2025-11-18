@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { KpiData } from '../types';
 
@@ -7,7 +8,7 @@ interface KpiTableProps {
     currency: string;
 }
 
-type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date'>;
+type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date' | 'entityId'>;
 
 const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({
@@ -17,12 +18,19 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
 
     const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
     const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
+    const formatPercent = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2 }).format(value / 100);
 
     const headers: { label: string; key: SortableKeys }[] = [
         { label: "Nome", key: "name" },
         { label: "Valor Gasto", key: "amountSpent" },
         { label: "Impressões", key: "impressions" },
-        { label: "CPM", key: "cpm" }
+        { label: "CPM", key: "cpm" },
+        { label: "Alcance", key: "reach" },
+        { label: "Cliques (Todos)", key: "clicks" },
+        { label: "CPC (Todos)", key: "cpc" },
+        { label: "CTR (Todos)", key: "ctr" },
+        { label: "Cliques no Link (Resultados)", key: "inlineLinkClicks" },
+        { label: "Custo por Resultado", key: "costPerInlineLinkClick" }
     ];
 
     const requestSort = (key: SortableKeys) => {
@@ -82,40 +90,50 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency }) => {
     return (
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-lg mt-6 overflow-x-auto">
             <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4">Métricas Detalhadas</h3>
-            <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
-                <thead className="bg-gray-50 dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-400 uppercase">
-                    <tr>
-                        {headers.map(header => (
-                            <th 
-                                key={header.key} 
-                                scope="col" 
-                                className="py-3 px-4 font-semibold cursor-pointer select-none transition-colors hover:bg-gray-100 dark:hover:bg-gray-600"
-                                onClick={() => requestSort(header.key)}
-                            >
-                                {header.label}
-                                <span className="ml-1 text-blue-500 dark:text-blue-400 align-middle">{getSortIndicator(header.key)}</span>
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {isLoading ? renderSkeletonRows() : sortedData.map(item => (
-                        <tr key={item.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                            <td className="py-3 px-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{item.name}</td>
-                            <td className="py-3 px-4">{formatCurrency(item.amountSpent)}</td>
-                            <td className="py-3 px-4">{formatNumber(item.impressions)}</td>
-                            <td className="py-3 px-4">{formatCurrency(item.cpm)}</td>
-                        </tr>
-                    ))}
-                    {!isLoading && sortedData.length === 0 && (
-                        <tr>
-                            <td colSpan={headers.length} className="text-center py-8 text-gray-500 dark:text-gray-400">
-                                Nenhum dado encontrado.
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
+            <div className="min-w-full inline-block align-middle">
+                <div className="overflow-hidden">
+                    <table className="min-w-full text-left text-sm text-gray-600 dark:text-gray-300">
+                        <thead className="bg-gray-50 dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-400 uppercase">
+                            <tr>
+                                {headers.map(header => (
+                                    <th 
+                                        key={header.key} 
+                                        scope="col" 
+                                        className="py-3 px-4 font-semibold cursor-pointer select-none transition-colors hover:bg-gray-100 dark:hover:bg-gray-600 whitespace-nowrap"
+                                        onClick={() => requestSort(header.key)}
+                                    >
+                                        {header.label}
+                                        <span className="ml-1 text-blue-500 dark:text-blue-400 align-middle">{getSortIndicator(header.key)}</span>
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {isLoading ? renderSkeletonRows() : sortedData.map(item => (
+                                <tr key={item.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                    <td className="py-3 px-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{item.name}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.amountSpent)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.impressions)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpm)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.reach)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatNumber(item.clicks)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.cpc)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatPercent(item.ctr)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap font-semibold text-blue-600 dark:text-blue-400">{formatNumber(item.inlineLinkClicks)}</td>
+                                    <td className="py-3 px-4 whitespace-nowrap">{formatCurrency(item.costPerInlineLinkClick)}</td>
+                                </tr>
+                            ))}
+                            {!isLoading && sortedData.length === 0 && (
+                                <tr>
+                                    <td colSpan={headers.length} className="text-center py-8 text-gray-500 dark:text-gray-400">
+                                        Nenhum dado encontrado.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     );
 };

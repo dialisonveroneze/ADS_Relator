@@ -21,6 +21,12 @@ export interface KpiData {
   amountSpent: number;
   impressions: number;
   cpm: number;
+  reach: number;
+  clicks: number;
+  inlineLinkClicks: number;
+  ctr: number;
+  cpc: number;
+  costPerInlineLinkClick: number;
 }
 
 // Mapeia nossas opções de período para os presets da API da Meta
@@ -59,7 +65,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const levelParam = typedLevel;
     
     // Define fields based on level
-    let fieldsList = ['spend', 'impressions', 'date_start', 'date_stop'];
+    // Added reach, clicks, inline_link_clicks (proxy for Results/Traffic)
+    let fieldsList = ['spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks', 'date_start', 'date_stop'];
     
     switch (typedLevel) {
         case DataLevel.ACCOUNT:
@@ -82,12 +89,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fetchInsights = async (preset: string, enableBreakdown: boolean) => {
         let allData: any[] = [];
         
-        // REMOVED FILTERING: We allow all data to pass through, even if impressions are 0.
-        // Filtering on the backend was causing valid rows (spend > 0, imp = 0) to be dropped.
-        
-        // We use date_preset for everything now as it is safer than manual time_range calculations regarding timezones.
-        // We enable time_increment=1 only for short ranges (last_X_days) to populate the chart.
-        // For monthly presets, we disable it to prevent the known API bug returning empty lists.
         let url = `https://graph.facebook.com/v19.0/${accountId}/insights?` +
                   `level=${levelParam}` +
                   `&fields=${fields}` +
@@ -115,9 +116,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const preset = datePresetMap[dateRange];
         
-        // We only try to breakdown by day if it is NOT a monthly preset.
-        // "Last X Days" presets work fine with time_increment=1.
-        // "This/Last Month" do NOT work fine with time_increment=1 (API bug).
         const tryDailyBreakdown = !['this_month', 'last_month'].includes(dateRange);
         
         let allInsights: any[] = [];
@@ -133,9 +131,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // FALLBACK / AGGREGATE MODE
-        // If daily fetch failed OR returned empty (possible strict filtering or API quirks) OR we skipped it (monthly mode):
-        // We fetch the total aggregate data. 
-        // This ensures the TABLE always has data, even if the chart (daily) is empty.
         if (allInsights.length === 0) {
             console.log("Fetching aggregate data (fallback)...");
             try {
@@ -179,7 +174,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             
             const spend = parseFloat(item?.spend ?? '0');
             const impressions = parseInt(item?.impressions ?? '0', 10);
+            const reach = parseInt(item?.reach ?? '0', 10);
+            const clicks = parseInt(item?.clicks ?? '0', 10);
+            const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
+            
+            // Calculate rates locally for the row
             const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
+            const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+            const cpc = clicks > 0 ? spend / clicks : 0;
+            const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
             
             return {
                 id: `${entityId}_${item.date_start}_${Math.random()}`, // Unique Key
@@ -189,7 +192,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 date: item.date_start, // YYYY-MM-DD
                 amountSpent: spend,
                 impressions: impressions,
+                reach: reach,
+                clicks: clicks,
+                inlineLinkClicks: inlineLinkClicks,
                 cpm: cpm,
+                ctr: ctr,
+                cpc: cpc,
+                costPerInlineLinkClick: costPerInlineLinkClick
             };
         });
 

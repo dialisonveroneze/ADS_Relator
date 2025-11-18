@@ -17,6 +17,12 @@ export interface KpiData {
   amountSpent: number;
   impressions: number;
   cpm: number;
+  reach: number;
+  clicks: number;
+  inlineLinkClicks: number;
+  ctr: number;
+  cpc: number;
+  costPerInlineLinkClick: number;
 }
 
 export enum DataLevel {

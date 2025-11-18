@@ -6,7 +6,7 @@ declare const Chart: any;
 
 interface LineChartProps {
     data: KpiData[];
-    metric: keyof Pick<KpiData, 'amountSpent' | 'impressions'>;
+    metric: keyof Pick<KpiData, 'amountSpent' | 'impressions' | 'reach' | 'clicks' | 'inlineLinkClicks'>;
     label: string;
     isLoading: boolean;
 }
