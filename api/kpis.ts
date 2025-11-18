@@ -233,33 +233,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             else if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
                 resultsCount = inlineLinkClicks;
             } 
-            // 3. Conversion/Engagement Campaigns: Result = Specific Actions
+            // 3. Conversion/Engagement/Sales Campaigns: Result = Specific Actions
             else {
                 const actions = item.actions || [];
                 
-                // List of actions that count as "Results" for performance campaigns
-                // Includes pixel events and messaging events (WhatsApp, Instagram Direct, Messenger)
-                const conversionActions = [
+                // IMPORTANT: We only use the "Aggregate" keys or distinct unique keys to avoid double counting.
+                // For example, 'purchase' usually sums up 'offsite_conversion.fb_pixel_purchase' + others.
+                // If we include both, we double count.
+                
+                const validActionTypes = [
+                    // Standard Events (Aggregates)
                     'purchase', 
-                    'offsite_conversion.fb_pixel_purchase',
                     'lead', 
-                    'offsite_conversion.fb_pixel_lead',
                     'complete_registration', 
-                    'offsite_conversion.fb_pixel_complete_registration',
                     'submit_application', 
                     'schedule', 
                     'contact',
                     'mobile_app_install',
-                    // Messaging Conversions (Critical for Engagement campaigns)
-                    'onsite_conversion.messaging_conversation_started_7d',
-                    'messaging_conversation_started_7d',
-                    'onsite_conversion.messaging_first_reply'
+                    
+                    // Messaging Conversions (Specific key for "Conversations Started" attribute)
+                    // We exclude the generic 'messaging_conversation_started_7d' if 'onsite...' is present to avoid duplicates,
+                    // but usually 'onsite_conversion.messaging_conversation_started_7d' is the one attributed to ads.
+                    'onsite_conversion.messaging_conversation_started_7d', 
                 ];
                 
                 if (Array.isArray(actions)) {
                     actions.forEach((action: any) => {
-                        // Check if the action type matches one of our key conversion metrics
-                        if (conversionActions.includes(action.action_type)) {
+                        if (validActionTypes.includes(action.action_type)) {
                             resultsCount += parseFloat(action.value);
                         }
                     });
