@@ -71,12 +71,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timeRange = { since, until };
 
     try {
-        let baseFields = 'spend,impressions,reach,clicks,inline_link_clicks,ctr,cpc,cpm';
+        // Define os campos base, excluindo métricas calculadas (CTR, CPC, CPM) para maior estabilidade
+        const coreFields = 'spend,impressions,reach,clicks,inline_link_clicks';
+        const resultFields = 'results,cost_per_result'; // Apenas para níveis onde fazem sentido
+
+        let requestedFields = coreFields;
         
-        // **CORREÇÃO CRÍTICA**: Só solicita `results` e `cost_per_result` para níveis onde fazem sentido.
-        // Pedir esses campos no nível da conta retorna uma resposta vazia e causa o erro.
+        // **CORREÇÃO CRÍTICA**: Só solicita `results` para níveis onde são aplicáveis.
         if (typedLevel !== DataLevel.ACCOUNT) {
-            baseFields += ',results,cost_per_result';
+            requestedFields += `,${resultFields}`;
         }
 
         let dynamicFields = '';
@@ -92,7 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 break;
         }
         
-        const fields = baseFields + dynamicFields;
+        const fields = requestedFields + dynamicFields;
         const levelParam = levelMap[typedLevel];
         
         let url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&time_range=${JSON.stringify(timeRange)}&time_increment=1&limit=500&access_token=${accessToken}`;
@@ -128,22 +131,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 default:
                      entityName = `(ID: ${entityId})`;
             }
-
+            
+            // Parse das métricas base
             const spend = parseFloat(item?.spend ?? '0');
+            const impressions = parseInt(item?.impressions ?? '0', 10);
+            const clicks = parseInt(item?.clicks ?? '0', 10);
+
+            // Cálculo manual das métricas para maior robustez
+            const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+            const cpc = clicks > 0 ? spend / clicks : 0;
+            const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
+            
+            // Parse das métricas de resultado (apenas se foram solicitadas)
             let results = 0;
             let costPerResult = 0;
-
-            // Processa `results` e `cost_per_result` apenas se foram solicitados e existem
             if (typedLevel !== DataLevel.ACCOUNT) {
                 if (item.results && Array.isArray(item.results)) {
                     results = item.results.reduce((total, action) => total + parseInt(action.value || '0', 10), 0);
                 }
                 
                 if (item.cost_per_result && Array.isArray(item.cost_per_result) && item.cost_per_result.length > 0) {
-                     // Pega o custo do primeiro tipo de resultado, que geralmente é o principal.
                     costPerResult = parseFloat(item.cost_per_result[0].value || '0');
                 } else if (results > 0) {
-                    // Calcula manualmente se a API não fornecer
                     costPerResult = spend / results;
                 }
             }
@@ -155,15 +164,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 level: typedLevel,
                 date: item.date_start,
                 amountSpent: spend,
-                impressions: parseInt(item?.impressions ?? '0', 10),
+                impressions: impressions,
                 reach: parseInt(item?.reach ?? '0', 10),
-                clicks: parseInt(item?.clicks ?? '0', 10),
+                clicks: clicks,
                 linkClicks: parseInt(item?.inline_link_clicks ?? '0', 10),
                 results: results,
                 costPerResult: costPerResult,
-                ctr: parseFloat(item?.ctr ?? '0'),
-                cpc: parseFloat(item?.cpc ?? '0'),
-                cpm: parseFloat(item?.cpm ?? '0'),
+                ctr: ctr,
+                cpc: cpc,
+                cpm: cpm,
             };
         });
 
