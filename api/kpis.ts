@@ -1,4 +1,3 @@
-
 // api/kpis.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
@@ -60,12 +59,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const fields = fieldsList.join(',');
 
+    // CRITICAL FIX: The Meta API often returns empty data (bug) when combining
+    // date_preset='this_month' or 'last_month' with time_increment=1.
+    // We disable daily breakdown for these presets to ensure data retrieval.
+    const useDailyBreakdown = !['this_month', 'last_month'].includes(dateRange);
+
     try {
         let allInsights: any[] = [];
-        // Reduced limit to 100 to prevent potential timeouts or issues with large payloads
-        let url: string | null = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}&time_increment=1&limit=100&access_token=${accessToken}`;
+        // Construct URL conditionally based on the breakdown requirement
+        let url: string | null = `https://graph.facebook.com/v19.0/${accountId}/insights?level=${levelParam}&fields=${fields}&date_preset=${datePreset}${useDailyBreakdown ? '&time_increment=1' : ''}&limit=100&access_token=${accessToken}`;
 
-        // Loop de paginação para buscar todos os insights
+        // Pagination loop
         while (url) {
             const metaResponse = await fetch(url);
             const data = await metaResponse.json();
@@ -82,12 +86,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 allInsights = allInsights.concat(data.data);
             }
             
-            // Verifica se existe uma próxima página
+            // Check for next page
             url = data.paging && data.paging.next ? data.paging.next : null;
         }
         
         if (allInsights.length === 0) {
-             // Return empty array if no data found, frontend will handle empty state
              return res.status(200).json([]);
         }
 
@@ -95,7 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let entityId: string;
             let entityName: string;
 
-            // Fallback ID logic: If the specific ID field is missing, use accountId or generate a unique placeholder
+            // Fallback ID logic
             const safeAccountId = item.account_id || accountId;
 
             switch (typedLevel) {
@@ -109,11 +112,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     break;
                 case DataLevel.AD_SET:
                     entityId = item.adset_id || `adset_${Math.random().toString(36).substr(2, 9)}`;
-                    entityName = `${item.campaign_name || "(?)"} > ${item.adset_name || "(Grupo sem nome)"}`;
+                    entityName = `${item.campaign_name || "?"} > ${item.adset_name || "(Grupo sem nome)"}`;
                     break;
                 case DataLevel.AD:
                     entityId = item.ad_id || `ad_${Math.random().toString(36).substr(2, 9)}`;
-                    entityName = `${item.campaign_name || "(?)"} > ${item.adset_name || "(?)"} > ${item.ad_name || "(Anúncio sem nome)"}`;
+                    entityName = `${item.campaign_name || "?"} > ${item.adset_name || "?"} > ${item.ad_name || "(Anúncio sem nome)"}`;
                     break;
                 default:
                      entityId = safeAccountId;
