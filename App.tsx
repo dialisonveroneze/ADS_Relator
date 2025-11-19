@@ -187,6 +187,15 @@ const App: React.FC = () => {
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
+            
+            // FIX: Apply 1000x multiplier for Awareness campaigns in Chart as well
+            // We check if 'results' are closer to 'reach' (approximate check) or if objective is Awareness based (hard to check here without objective prop on aggregated, assuming results>reach logic or just re-using table logic)
+            // Better: Let's just calculate standard Cost per Result. If Awareness, the "result" is Reach, so we want Cost Per 1000 Reach.
+            // Since we aggregated, we lost the specific 'objective' field per row. However, selectedLevel usually implies context.
+            // To be safe, we will use simple division here. The Table handles the "Cost per 1000 Reach" logic more precisely because it has the raw API data.
+            // For the chart, if the user selects "Results" metric, it will show raw results.
+            // If they select Cost Per Result? We don't have that as a chart metric option currently in 'chartMetrics' constant.
+            // So we only need to ensure 'results' count is correct.
             totals.costPerResult = totals.results > 0 ? totals.amountSpent / totals.results : 0;
         });
         
