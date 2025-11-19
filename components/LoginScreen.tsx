@@ -3,12 +3,24 @@ import React from 'react';
 
 // Estas constantes seriam idealmente carregadas de variáveis de ambiente do build,
 // mas para este projeto sem build, elas são definidas aqui.
-// O backend usará as variáveis de ambiente do servidor para segurança.
 const META_APP_ID = '897058925982042'; 
-const ROOT_URL = window.location.origin;
 
 const LoginScreen: React.FC = () => {
     
+    // Lógica para definir a URL base de redirecionamento:
+    // 1. Se estivermos em localhost (desenvolvimento), usa o próprio localhost.
+    // 2. Se estivermos em QUALQUER outro lugar (Vercel Preview, Produção, etc),
+    //    FORÇAMOS o uso do domínio oficial.
+    // Isso evita o erro "URL Bloqueada" do Facebook ao acessar por links temporários da Vercel,
+    // pois o Facebook exige que a URL de redirecionamento esteja na lista de permissões (Allowlist).
+    
+    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    
+    // Substitua pela sua URL de produção final configurada no Facebook
+    const PRODUCTION_DOMAIN = 'https://dashboard.mindfulmarketing.com.br';
+    
+    const ROOT_URL = isLocalhost ? window.location.origin : PRODUCTION_DOMAIN;
+
     // A URL de redirecionamento DEVE apontar para o nosso endpoint de backend.
     const redirectUri = `${ROOT_URL}/api/auth`;
     
