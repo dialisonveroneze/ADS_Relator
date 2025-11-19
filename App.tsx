@@ -7,6 +7,8 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import SubscriptionGate from './components/SubscriptionGate';
+import PrivacyPolicy from './components/PrivacyPolicy';
+import TermsOfService from './components/TermsOfService';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
 import { getSubscriptionStatus } from './services/subscriptionService';
 import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption, UserSubscription } from './types';
@@ -30,6 +32,15 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
 ];
 
 const App: React.FC = () => {
+    // Routing Logic
+    const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+    if (path === '/privacy') {
+        return <PrivacyPolicy />;
+    }
+    if (path === '/terms') {
+        return <TermsOfService />;
+    }
+
     // Authentication State
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
     
@@ -160,7 +171,7 @@ const App: React.FC = () => {
             const totals = dailyTotals[item.date];
             totals.amountSpent += item.amountSpent;
             totals.impressions += item.impressions;
-            totals.reach += item.reach; // Note: Summing reach here is visually approximate for charts, but technically overlapping. 
+            totals.reach += item.reach; 
             totals.clicks += item.clicks;
             totals.inlineLinkClicks += item.inlineLinkClicks;
             totals.results += item.results;
@@ -168,22 +179,17 @@ const App: React.FC = () => {
 
         // Recalculate rates for chart
         Object.values(dailyTotals).forEach(totals => {
-            // Removed toFixed(2) to keep precision in data processing
             totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
             
-            // FIX: Apply 1000x multiplier for Awareness campaigns in Chart as well
-            // If user selected results metric for chart, logic handles aggregation. 
-            // For derived metrics like CPR, we recalculate.
-            // Since aggregated data loses granular 'objective', we use basic CPR logic here for charts,
-            // relying on the user to interpret context.
+            // Logic to determine if we should apply the 1000x multiplier for CPR in charts.
+            // Since aggregated chart data loses the granular 'objective' field of individual rows,
+            // we infer it. If CPR is extremely low (< 0.05) and Reach is high, it's likely Awareness.
+            // However, a safer approach for the chart is to just display the raw calculation.
+            // The user relies on the Table for precise financial auditing.
             totals.costPerResult = totals.results > 0 ? totals.amountSpent / totals.results : 0;
-            
-            // Heuristic: if results approximate reach and CPM is low, it might be Awareness.
-            // But without explicit objective on aggregated data, safe to leave as standard CPR for trend lines.
-            // The table provides the precise breakdown.
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
@@ -192,27 +198,21 @@ const App: React.FC = () => {
     const tableData = useMemo(() => {
         if (kpiData.length === 0) return [];
         
-        // If selected level is ACCOUNT, we usually want to see the day-by-day breakdown in the table
-        // matching the chart.
         if (selectedLevel === DataLevel.ACCOUNT) {
             return kpiData
                 .filter(d => !d.isPeriodTotal)
                 .map(d => ({ ...d, name: new Date(d.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }));
         }
         
-        // For Campaign/AdSet/Ad levels, we want the "Period Summary" rows.
-        // We use the data where isPeriodTotal is true. This data comes directly from Meta with correct Reach/Result deduplication.
         const summaryData = kpiData.filter(d => d.isPeriodTotal);
         
-        // If for some reason summary is missing but we have daily data (fallback case), we aggregate manually.
         if (summaryData.length > 0) {
             return summaryData;
         }
 
-        // Fallback manual aggregation (only runs if API fails to return summary)
         const aggregated: { [id: string]: KpiData } = {};
         kpiData.forEach(item => {
-            if (item.isPeriodTotal) return; // Skip summary items if we are aggregating daily manually
+            if (item.isPeriodTotal) return; 
             
             if (!aggregated[item.entityId]) {
                 aggregated[item.entityId] = {
@@ -236,9 +236,7 @@ const App: React.FC = () => {
             totals.results += item.results;
         });
     
-        // Recalculate rates based on aggregated totals
         Object.values(aggregated).forEach(totals => {
-            // Removed toFixed(2) to keep precision
             totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
@@ -254,14 +252,12 @@ const App: React.FC = () => {
         setSelectedAccount(account);
         setSelectedLevel(DataLevel.ACCOUNT);
         setDateRange('last_14_days');
-        setKpiData([]); // Clear old data immediately
+        setKpiData([]); 
         setSelectedEntityId(null);
     };
 
     const handleRowClick = (entityId: string) => {
-        // Disable drill-down on Account level since rows are dates, not distinct entities to filter by
         if (selectedLevel === DataLevel.ACCOUNT) return;
-
         setSelectedEntityId(prev => prev === entityId ? null : entityId);
     };
 
@@ -339,7 +335,6 @@ const App: React.FC = () => {
              >
                 {error && (<div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative" role="alert"><strong className="font-bold">Ocorreu um erro: </strong><span className="block sm:inline">{error}</span></div>)}
                 
-                {/* Controls for Balance List Visibility */}
                 <div className="flex justify-end">
                     <button
                         onClick={() => setShowBalanceList(!showBalanceList)}
@@ -420,8 +415,8 @@ const App: React.FC = () => {
     
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-            <Header isAuthenticated={!!isAuthenticated} onLogout={handleLogout} />
-            <AuthContent />
+            <Header isAuthenticated={!!isAuthenticated && path === '/'} onLogout={handleLogout} />
+            {path === '/' ? <AuthContent /> : path === '/privacy' ? <PrivacyPolicy /> : <TermsOfService />}
         </div>
     );
 };
