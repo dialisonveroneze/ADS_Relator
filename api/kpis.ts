@@ -210,130 +210,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const clicks = parseInt(item?.clicks ?? '0', 10);
                 const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
                 
-                // ----------- ALGORITMO DE CÁLCULO DE RESULTADOS -----------
+                // ----------- ALGORITMO DE CÁLCULO DE RESULTADOS (WATERFALL) -----------
                 let resultsCount = 0;
                 const objective = item.objective;
                 const actions = item.actions || [];
+
+                // Helper para somar métricas parciais (ex: atribuições _7d, _1d)
+                const sumActionValue = (keyPart: string) => {
+                    const matches = actions.filter((a: any) => a.action_type.includes(keyPart));
+                    return matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
+                };
+
+                // Helper para buscar valor exato (evita duplicidade de pixel)
+                const getExactValue = (key: string) => {
+                    const match = actions.find((a: any) => a.action_type === key);
+                    return match ? parseFloat(match.value) : 0;
+                };
+
+                // 1. Definição do Contexto da Campanha
+                const isTraffic = objective === 'OUTCOME_TRAFFIC' || objective === 'TRAFFIC' || objective === 'LINK_CLICKS';
+                const isAwareness = objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH';
+                // Engajamento e Vendas são tratados pela prioridade de métricas abaixo
+
+                // 2. CASCATA DE PRIORIDADES (WATERFALL)
+                // O sistema tentará encontrar o valor na ordem abaixo. O primeiro que for > 0 vence.
                 
-                let conversionPriorities: { key: string, mode: 'exact_first' | 'sum_partial' }[] = [];
-
-                const isTraffic = objective === 'OUTCOME_TRAFFIC' || objective === 'TRAFFIC';
-                const isEngagement = objective === 'OUTCOME_ENGAGEMENT' || objective === 'MESSAGES' || objective === 'POST_ENGAGEMENT';
-                const isSales = objective === 'OUTCOME_SALES' || objective === 'CONVERSIONS';
-
-                if (isTraffic) {
-                    // ESTRATÉGIA DE TRÁFEGO (Inclui WhatsApp)
-                    // 1. Procura conversas/WhatsApp primeiro (para campanhas de Tráfego p/ Whats)
-                    // 2. Procura Compras (caso raro, mas possível)
-                    // 3. SE NÃO ACHAR NADA -> Fallback para Cliques no Link (padrão Tráfego Site)
-                    conversionPriorities = [
-                        { key: 'omni_messaging_conversation_started', mode: 'sum_partial' },
-                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
-                        { key: 'click_to_whatsapp', mode: 'sum_partial' },
-                        { key: 'whatsapp', mode: 'sum_partial' },
-                        { key: 'purchase', mode: 'exact_first' }
-                    ];
-                } 
-                else if (isEngagement) {
-                    // ESTRATÉGIA DE ENGAJAMENTO
-                    // Prioriza Conversas, depois Leads, depois outros engajamentos.
-                    conversionPriorities = [
-                        { key: 'omni_messaging_conversation_started', mode: 'sum_partial' },
-                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
-                        { key: 'leads', mode: 'sum_partial' },
-                        { key: 'lead', mode: 'sum_partial' },
-                        { key: 'purchase', mode: 'exact_first' },
-                        { key: 'schedule', mode: 'sum_partial' },
-                        { key: 'complete_registration', mode: 'sum_partial' },
-                        { key: 'submit_application', mode: 'sum_partial' }
-                    ];
-                } 
-                else if (isSales) {
-                    // ESTRATÉGIA DE VENDAS
-                    // Purchase é a prioridade máxima.
-                    conversionPriorities = [
-                        { key: 'purchase', mode: 'exact_first' },
-                        { key: 'leads', mode: 'sum_partial' },
-                        { key: 'lead', mode: 'sum_partial' },
-                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
-                        { key: 'schedule', mode: 'sum_partial' },
-                        { key: 'complete_registration', mode: 'sum_partial' }
-                    ];
-                } 
-                else {
-                    // OUTROS / RECONHECIMENTO
-                    // Busca genérica, mas geralmente vai cair no fallback de Alcance.
-                     conversionPriorities = [
-                        { key: 'leads', mode: 'sum_partial' },
-                        { key: 'lead', mode: 'sum_partial' },
-                        { key: 'purchase', mode: 'exact_first' },
-                        { key: 'messaging_conversation_started', mode: 'sum_partial' }
-                     ];
+                // Nível 1: Vendas Reais (Ouro) - Sempre a métrica mais importante se existir
+                if (resultsCount === 0) resultsCount = getExactValue('purchase');
+                
+                // Nível 2: Leads e Cadastros (Prata)
+                if (resultsCount === 0) resultsCount = sumActionValue('leads');
+                if (resultsCount === 0) resultsCount = sumActionValue('lead'); // Algumas contas usam singular
+                
+                // Nível 3: Conversas Iniciadas (Bronze) - Crítico para Tráfego p/ WhatsApp
+                if (resultsCount === 0) resultsCount = sumActionValue('omni_messaging_conversation_started');
+                if (resultsCount === 0) resultsCount = sumActionValue('messaging_conversation_started');
+                
+                // Nível 4: Engajamentos Específicos (Se não for tráfego puro)
+                // Se não achamos Venda/Lead/Conversa, pode ser campanha de Engajamento ou App
+                if (resultsCount === 0 && !isTraffic && !isAwareness) {
+                    if (resultsCount === 0) resultsCount = sumActionValue('schedule'); // Agendamentos
+                    if (resultsCount === 0) resultsCount = sumActionValue('complete_registration');
+                    if (resultsCount === 0) resultsCount = sumActionValue('submit_application');
                 }
 
-                // 1. Tenta encontrar conversões na lista de prioridades
-                for (const priority of conversionPriorities) {
-                    if (priority.mode === 'exact_first') {
-                        // Busca exata (útil para purchase pixel vs purchase meta)
-                        let exactMatch = actions.find((a: any) => a.action_type === priority.key);
-                        if (exactMatch) {
-                            resultsCount = parseFloat(exactMatch.value);
-                            if (resultsCount > 0) break;
-                        }
-                    } else {
-                        // Soma Inteligente (Lida com janelas de atribuição: _1d, _7d, _28d)
-                        // Primeiro tenta match exato das chaves de atribuição
-                        const exactKeys = [
-                            `onsite_conversion.${priority.key}_7d`,
-                            `${priority.key}_7d`,
-                            `onsite_conversion.${priority.key}_1d`,
-                            `${priority.key}_1d`,
-                            `onsite_conversion.${priority.key}_28d`,
-                            `${priority.key}_28d`
-                        ];
-
-                        let foundExact = false;
-                        for (const k of exactKeys) {
-                             const m = actions.find((a: any) => a.action_type === k);
-                             if (m) {
-                                 const val = parseFloat(m.value);
-                                 if (val > 0) {
-                                     resultsCount = val;
-                                     foundExact = true;
-                                     break;
-                                 }
-                             }
-                        }
-
-                        if (foundExact) break;
-
-                        // Se não achar exato, soma qualquer variação que contenha a chave
-                        // (Ex: click_to_whatsapp_7d_click + click_to_whatsapp_1d_view)
-                        const matches = actions.filter((a: any) => a.action_type.includes(priority.key));
-                        if (matches.length > 0) {
-                            const sum = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
-                            if (sum > 0) {
-                                resultsCount = sum;
-                                break;
-                            }
-                        }
-                    }
+                // Nível 5: Fallback para Tráfego (Cliques)
+                // Se não achou NADA acima (vendas, leads, conversas) e é campanha de Tráfego,
+                // então o resultado é o Clique no Link.
+                if (resultsCount === 0 && isTraffic) {
+                    resultsCount = inlineLinkClicks;
+                    // Se inlineLinkClicks for 0, tenta clicks gerais como último recurso
+                    if (resultsCount === 0) resultsCount = clicks;
                 }
 
-                // 2. Fallback (Plano B): Se não achou conversão nenhuma
+                // Nível 6: Fallback para Reconhecimento (Alcance)
                 let isReachBased = false;
-                if (resultsCount === 0) {
-                    if (isTraffic || objective === 'LINK_CLICKS') {
-                        // Para Tráfego Site -> Usa Cliques no Link
-                        resultsCount = inlineLinkClicks;
-                    } 
-                    else if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
-                        // Para Reconhecimento -> Usa Alcance
-                        resultsCount = reach;
-                        isReachBased = true;
-                    }
+                if (resultsCount === 0 && isAwareness) {
+                    resultsCount = reach;
+                    isReachBased = true;
                 }
-                
+
+                // Cálculos de Taxas
                 const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
                 const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
                 const cpc = clicks > 0 ? spend / clicks : 0;
