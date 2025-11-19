@@ -7,8 +7,6 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import SubscriptionGate from './components/SubscriptionGate';
-import PrivacyPolicy from './components/PrivacyPolicy';
-import TermsOfService from './components/TermsOfService';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
 import { getSubscriptionStatus } from './services/subscriptionService';
 import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption, UserSubscription } from './types';
@@ -32,15 +30,6 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
 ];
 
 const App: React.FC = () => {
-    // Routing Logic
-    const path = typeof window !== 'undefined' ? window.location.pathname : '/';
-    if (path === '/privacy') {
-        return <PrivacyPolicy />;
-    }
-    if (path === '/terms') {
-        return <TermsOfService />;
-    }
-
     // Authentication State
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
     
@@ -165,7 +154,7 @@ const App: React.FC = () => {
                     id: item.date, entityId: item.date, name: `Resumo - ${item.date}`, level: selectedLevel, date: item.date,
                     amountSpent: 0, impressions: 0, cpm: 0,
                     reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0,
-                    results: 0, costPerResult: 0
+                    results: 0, costPerResult: 0, objective: item.objective 
                 };
             }
             const totals = dailyTotals[item.date];
@@ -175,6 +164,8 @@ const App: React.FC = () => {
             totals.clicks += item.clicks;
             totals.inlineLinkClicks += item.inlineLinkClicks;
             totals.results += item.results;
+            // Maintain one objective for inference if mixed (last wins)
+            totals.objective = item.objective;
         });
 
         // Recalculate rates for chart
@@ -184,12 +175,12 @@ const App: React.FC = () => {
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
             
-            // Logic to determine if we should apply the 1000x multiplier for CPR in charts.
-            // Since aggregated chart data loses the granular 'objective' field of individual rows,
-            // we infer it. If CPR is extremely low (< 0.05) and Reach is high, it's likely Awareness.
-            // However, a safer approach for the chart is to just display the raw calculation.
-            // The user relies on the Table for precise financial auditing.
-            totals.costPerResult = totals.results > 0 ? totals.amountSpent / totals.results : 0;
+            // Check if this aggregate looks like Awareness/Reach (based on objective or if results == reach)
+            const isAwareness = totals.objective === 'OUTCOME_AWARENESS' || totals.objective === 'REACH' || (totals.results > 0 && totals.results === totals.reach);
+
+            totals.costPerResult = totals.results > 0 
+                ? (totals.amountSpent / totals.results) * (isAwareness ? 1000 : 1) 
+                : 0;
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
@@ -210,6 +201,7 @@ const App: React.FC = () => {
             return summaryData;
         }
 
+        // Fallback aggregation if summary data is missing
         const aggregated: { [id: string]: KpiData } = {};
         kpiData.forEach(item => {
             if (item.isPeriodTotal) return; 
@@ -223,7 +215,7 @@ const App: React.FC = () => {
                     date: '', 
                     amountSpent: 0, impressions: 0, cpm: 0,
                     reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0,
-                    results: 0, costPerResult: 0
+                    results: 0, costPerResult: 0, objective: item.objective
                 };
             }
             
@@ -241,7 +233,12 @@ const App: React.FC = () => {
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
-            totals.costPerResult = totals.results > 0 ? totals.amountSpent / totals.results : 0;
+            
+             const isAwareness = totals.objective === 'OUTCOME_AWARENESS' || totals.objective === 'REACH' || (totals.results > 0 && totals.results === totals.reach);
+
+            totals.costPerResult = totals.results > 0 
+                ? (totals.amountSpent / totals.results) * (isAwareness ? 1000 : 1) 
+                : 0;
         });
     
         return Object.values(aggregated);
@@ -415,8 +412,8 @@ const App: React.FC = () => {
     
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-            <Header isAuthenticated={!!isAuthenticated && path === '/'} onLogout={handleLogout} />
-            {path === '/' ? <AuthContent /> : path === '/privacy' ? <PrivacyPolicy /> : <TermsOfService />}
+            <Header isAuthenticated={!!isAuthenticated} onLogout={handleLogout} />
+            <AuthContent />
         </div>
     );
 };

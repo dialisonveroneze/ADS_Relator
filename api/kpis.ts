@@ -3,7 +3,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
 
-// Definindo tipos localmente para evitar erros de resolução de módulo no ambiente serverless (Vercel)
 export enum DataLevel {
   ACCOUNT = 'account',
   CAMPAIGN = 'campaign',
@@ -44,23 +43,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { accountId, level, dateRange: dateRangeQuery } = req.query;
 
-    // Validate required parameters
     if (!accountId || typeof accountId !== 'string' || !level || typeof level !== 'string') {
         return res.status(400).json({ message: 'ID da conta e nível são obrigatórios.' });
     }
     
-    // Ensure the level is valid based on our enum
     if (!Object.values(DataLevel).includes(level as DataLevel)) {
          return res.status(400).json({ message: 'Nível de dados inválido.' });
     }
 
     const typedLevel = level as DataLevel;
     const dateRange = (dateRangeQuery || 'last_14_days') as DateRangeOption;
-    
-    // The API level parameter now matches our enum directly
     const levelParam = typedLevel;
     
-    // Define fields based on level
     let fieldsList = ['spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks', 'actions', 'date_start', 'date_stop', 'objective'];
     
     switch (typedLevel) {
@@ -80,10 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const fields = fieldsList.join(',');
 
-    // Helper function to format date as YYYY-MM-DD
     const formatDate = (date: Date) => date.toISOString().split('T')[0];
-
-    // Calculate time_range manually
     const today = new Date();
     let since: string;
     let until: string = formatDate(today);
@@ -128,10 +119,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const timeRangeStr = JSON.stringify({ since, until });
 
-    // Helper function to fetch data from Meta
     const fetchInsights = async (enableBreakdown: boolean) => {
         let allData: any[] = [];
-        
         let url = `https://graph.facebook.com/v19.0/${accountId}/insights?` +
                   `level=${levelParam}` +
                   `&fields=${fields}` +
@@ -142,33 +131,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         while (url) {
             const response = await fetch(url);
             const data = await response.json();
-
-            if (data.error) {
-                 throw data.error;
-            }
-
-            if (data.data && Array.isArray(data.data)) {
-                allData = allData.concat(data.data);
-            }
-            
+            if (data.error) throw data.error;
+            if (data.data && Array.isArray(data.data)) allData = allData.concat(data.data);
             url = data.paging && data.paging.next ? data.paging.next : null;
         }
         return allData;
     };
 
     try {
-        // Execute both requests in parallel:
-        // 1. Daily breakdown (for Chart)
-        // 2. Summary (for Table - correct totals)
         const [dailyRaw, summaryRaw] = await Promise.all([
-             fetchInsights(true).catch(e => { 
-                 console.warn("Daily fetch failed or empty", e.message); 
-                 return []; 
-             }),
-             fetchInsights(false).catch(e => { 
-                 console.warn("Summary fetch failed", e.message); 
-                 return []; 
-             })
+             fetchInsights(true).catch(e => []),
+             fetchInsights(false).catch(e => [])
         ]);
 
         if (dailyRaw.length === 0 && summaryRaw.length === 0) {
@@ -179,7 +152,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return dataItems.map((item: any) => {
                 let entityId: string;
                 let entityName: string;
-                
                 const safeAccountId = item.account_id || accountId;
 
                 switch (typedLevel) {
@@ -209,88 +181,120 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const reach = parseInt(item?.reach ?? '0', 10);
                 const clicks = parseInt(item?.clicks ?? '0', 10);
                 const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
-                
-                // ----------- ALGORITMO DE CÁLCULO DE RESULTADOS (WATERFALL) -----------
-                let resultsCount = 0;
                 const objective = item.objective;
                 const actions = item.actions || [];
 
-                // Helper para somar métricas parciais (ex: atribuições _7d, _1d)
-                const sumActionValue = (keyPart: string) => {
-                    const matches = actions.filter((a: any) => a.action_type.includes(keyPart));
-                    return matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
-                };
+                // ----------- ALGORITMO WATERFALL DE RESULTADOS -----------
+                let resultsCount = 0;
 
-                // Helper para buscar valor exato (evita duplicidade de pixel)
+                // 1. Detecção de Objetivo baseado em NOME + API
+                // Se o nome contiver "reconhecimento", "video view", "branding", força isAwareness
+                const nameLower = entityName.toLowerCase();
+                const isNameBasedAwareness = 
+                    nameLower.includes('reconhecimento') || 
+                    nameLower.includes('alcance') || 
+                    nameLower.includes('video view') || 
+                    nameLower.includes('visualização') || 
+                    nameLower.includes('branding');
+
+                const isAwareness = 
+                    isNameBasedAwareness ||
+                    objective === 'OUTCOME_AWARENESS' || 
+                    objective === 'BRAND_AWARENESS' || 
+                    objective === 'VIDEO_VIEWS' ||
+                    objective === 'REACH';
+
+                const isTraffic = 
+                    objective === 'OUTCOME_TRAFFIC' || 
+                    objective === 'TRAFFIC' || 
+                    objective === 'LINK_CLICKS';
+
+                // Funções auxiliares
                 const getExactValue = (key: string) => {
                     const match = actions.find((a: any) => a.action_type === key);
                     return match ? parseFloat(match.value) : 0;
                 };
 
-                // 1. Definição do Contexto da Campanha
-                const isTraffic = objective === 'OUTCOME_TRAFFIC' || objective === 'TRAFFIC' || objective === 'LINK_CLICKS';
-                const isAwareness = objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH';
-                const isEngagement = objective === 'OUTCOME_ENGAGEMENT' || objective === 'MESSAGES' || objective === 'POST_ENGAGEMENT';
-                const isSales = objective === 'OUTCOME_SALES' || objective === 'CONVERSIONS';
+                const getMessagingTotal = () => {
+                    // Pega tudo que tem 'messaging_conversation_started'
+                    const msgs = actions.filter((a: any) => a.action_type.includes('messaging_conversation_started'));
+                    if (msgs.length === 0) return 0;
 
-                // 2. CASCATA DE PRIORIDADES (WATERFALL)
-                
-                if (isTraffic) {
-                    // LÓGICA ESPECÍFICA PARA TRÁFEGO
-                    // Prioriza Conversas (WhatsApp) sobre Cliques.
-                    // IGNORA Leads/Contacts para evitar ruído (ex: 2 contatos vs 52 conversas).
+                    // Procura por chaves granulares (ex: _7d, _1d_view)
+                    const granular = msgs.filter((a: any) => a.action_type.match(/_\d+d(_view)?$/));
                     
-                    // 1. Vendas Reais (Ouro)
-                    if (resultsCount === 0) resultsCount = getExactValue('purchase');
+                    if (granular.length > 0) {
+                        // Soma apenas as partes distintas
+                        return granular.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
+                    }
+                    // Fallback: Pega o maior valor encontrado (Total Unificado)
+                    return Math.max(...msgs.map((a: any) => parseFloat(a.value)));
+                };
+
+                const getTrafficMessagingTotal = () => {
+                    // Para tráfego p/ whatsApp, procuramos conversas ou cliques no whatsapp
+                    // Prioriza Conversas Reais
+                    const conversations = getMessagingTotal();
+                    if (conversations > 0) return conversations;
+
+                    // Se não, tenta omni_messaging ou click_to_whatsapp
+                    const whatsappActions = actions.filter((a: any) => 
+                        a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
+                        a.action_type === 'omni_messaging_conversation_started_7d' ||
+                        a.action_type === 'contact_total' || // Em alguns casos raros
+                        (a.action_type.includes('whatsapp') && !a.action_type.includes('view'))
+                    );
                     
-                    // 2. Conversas (Prata) - Soma tudo que for mensagem
-                    if (resultsCount === 0) resultsCount = sumActionValue('messaging_conversation_started');
-                    
-                    // 3. Fallback (Bronze) - Cliques no Link
+                    // Retorna o maior valor encontrado para evitar soma de duplicatas
+                    if (whatsappActions.length > 0) {
+                        return Math.max(...whatsappActions.map((a: any) => parseFloat(a.value)));
+                    }
+                    return 0;
+                };
+
+
+                // --- APLICAÇÃO DA LÓGICA DE PRIORIDADE ---
+
+                // REGRA 1: Se é Reconhecimento (por API ou Nome), Resultado = Alcance. PONTO FINAL.
+                if (isAwareness) {
+                    resultsCount = reach;
+                }
+                else {
+                    // REGRA 2: Busca Vendas (Prioridade Ouro)
+                    resultsCount = getExactValue('purchase');
+
+                    // REGRA 3: Busca Conversas (Prioridade Prata)
                     if (resultsCount === 0) {
-                        resultsCount = inlineLinkClicks;
-                         // Se inlineLinkClicks for 0, tenta clicks gerais como último recurso
-                        if (resultsCount === 0) resultsCount = clicks;
+                        // Se for Tráfego, usa a lógica estrita para evitar ruído (ex: leads falsos)
+                        if (isTraffic) {
+                             resultsCount = getTrafficMessagingTotal();
+                        } else {
+                             resultsCount = getMessagingTotal();
+                        }
                     }
 
-                } else {
-                    // LÓGICA PADRÃO (Vendas, Engajamento, etc)
-                    
-                    // Nível 1: Vendas Reais
-                    if (resultsCount === 0) resultsCount = getExactValue('purchase');
-                    
-                    // Nível 2: Leads e Cadastros
-                    if (resultsCount === 0) resultsCount = sumActionValue('leads');
-                    if (resultsCount === 0) resultsCount = sumActionValue('lead');
-                    
-                    // Nível 3: Conversas Iniciadas
-                    if (resultsCount === 0) resultsCount = sumActionValue('omni_messaging_conversation_started');
-                    if (resultsCount === 0) resultsCount = sumActionValue('messaging_conversation_started');
-                    
-                    // Nível 4: Engajamentos Específicos
-                    if (resultsCount === 0 && !isAwareness) {
-                        if (resultsCount === 0) resultsCount = sumActionValue('schedule');
-                        if (resultsCount === 0) resultsCount = sumActionValue('complete_registration');
-                        if (resultsCount === 0) resultsCount = sumActionValue('submit_application');
+                    // REGRA 4: Busca Leads/Cadastros (Prioridade Bronze)
+                    // APENAS se NÃO for Tráfego (para evitar que cliques de botão virem leads falsos em campanhas de tráfego)
+                    if (resultsCount === 0 && !isTraffic) {
+                        resultsCount = getExactValue('leads') || getExactValue('lead') || getExactValue('schedule');
                     }
-                    
-                    // Nível 5: Fallback para Reconhecimento
-                    if (resultsCount === 0 && isAwareness) {
-                        resultsCount = reach;
+
+                    // REGRA 5: Fallback para Tráfego (Base)
+                    // Se é tráfego e não achou venda nem conversa -> Cliques no Link
+                    if (resultsCount === 0 && isTraffic) {
+                        resultsCount = inlineLinkClicks;
+                        // Último recurso: Cliques gerais
+                        if (resultsCount === 0) resultsCount = clicks;
                     }
                 }
 
-                // Flag auxiliar para saber se o resultado é baseado em Alcance (para ajustar o Custo por Resultado)
-                const isReachBased = isAwareness && resultsCount === reach;
+                const isReachBased = isAwareness;
 
-                // Cálculos de Taxas
                 const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
                 const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
                 const cpc = clicks > 0 ? spend / clicks : 0;
                 const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
                 
-                // Custo por Resultado
-                // Se for baseada em alcance, multiplica por 1000 (CPM padrão de mercado)
                 const costPerResult = resultsCount > 0 
                     ? (spend / resultsCount) * (isReachBased ? 1000 : 1) 
                     : 0;
@@ -325,7 +329,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const dailyFormatted = processData(dailyRaw, false);
         const summaryFormatted = processData(summaryRaw, true);
 
-        // Retorna o conjunto combinado
         res.status(200).json([...dailyFormatted, ...summaryFormatted]);
 
     } catch (error: any) {

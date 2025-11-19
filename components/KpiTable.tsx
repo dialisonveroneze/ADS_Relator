@@ -12,7 +12,7 @@ interface KpiTableProps {
 
 type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date' | 'entityId'>;
 
-// Configuração movida para fora do componente para garantir ordem estática absoluta
+// ORDEM ESTRITA DAS COLUNAS - NÃO ALTERAR A SEQUÊNCIA
 const HEADERS_CONFIG: { label: string; key: SortableKeys; align?: 'left' | 'right' | 'center'; minWidth: string }[] = [
     { label: "Nome", key: "name", align: 'left', minWidth: 'min-w-[160px] md:min-w-[250px]' },
     { label: "Valor Gasto", key: "amountSpent", align: 'right', minWidth: 'min-w-[110px] md:min-w-[120px]' },
@@ -34,14 +34,12 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         direction: 'descending'
     });
 
-    // Estado para colunas visíveis
     const [visibleKeys, setVisibleKeys] = useState<Set<SortableKeys>>(
         new Set(HEADERS_CONFIG.map(h => h.key))
     );
     const [showColumnSelector, setShowColumnSelector] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Fechar dropdown ao clicar fora
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -53,7 +51,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     }, []);
 
     const toggleColumn = (key: SortableKeys) => {
-        if (key === 'name') return; // Impede esconder a coluna Nome
+        if (key === 'name') return; 
         const newSet = new Set(visibleKeys);
         if (newSet.has(key)) {
             newSet.delete(key);
@@ -63,10 +61,10 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         setVisibleKeys(newSet);
     };
 
-    // Filtra os headers baseado na visibilidade, MANTENDO A ORDEM ORIGINAL DE HEADERS_CONFIG
     const visibleHeaders = HEADERS_CONFIG.filter(h => visibleKeys.has(h.key));
 
     const formatCurrency = (value: number) => {
+        // Se o valor for muito pequeno (ex: custo por alcance 0.001), mostra 4 casas.
         if (value > 0 && value < 0.01) {
             return new Intl.NumberFormat('pt-BR', { 
                 style: 'currency', 
@@ -227,7 +225,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                 <th 
                                     key={header.key} 
                                     scope="col" 
-                                    // REMOVIDO 'uppercase' para garantir que a preferência do usuário seja respeitada e para indicar visualmente que o código foi atualizado
                                     className={`
                                         py-3 px-4 text-xs font-bold text-gray-700 dark:text-gray-200 tracking-wider cursor-pointer select-none 
                                         hover:bg-gray-100 dark:hover:bg-gray-600 whitespace-nowrap ${header.minWidth}
