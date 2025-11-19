@@ -230,45 +230,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 // 1. Definição do Contexto da Campanha
                 const isTraffic = objective === 'OUTCOME_TRAFFIC' || objective === 'TRAFFIC' || objective === 'LINK_CLICKS';
                 const isAwareness = objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH';
-                // Engajamento e Vendas são tratados pela prioridade de métricas abaixo
+                const isEngagement = objective === 'OUTCOME_ENGAGEMENT' || objective === 'MESSAGES' || objective === 'POST_ENGAGEMENT';
+                const isSales = objective === 'OUTCOME_SALES' || objective === 'CONVERSIONS';
 
                 // 2. CASCATA DE PRIORIDADES (WATERFALL)
-                // O sistema tentará encontrar o valor na ordem abaixo. O primeiro que for > 0 vence.
                 
-                // Nível 1: Vendas Reais (Ouro) - Sempre a métrica mais importante se existir
-                if (resultsCount === 0) resultsCount = getExactValue('purchase');
-                
-                // Nível 2: Leads e Cadastros (Prata)
-                if (resultsCount === 0) resultsCount = sumActionValue('leads');
-                if (resultsCount === 0) resultsCount = sumActionValue('lead'); // Algumas contas usam singular
-                
-                // Nível 3: Conversas Iniciadas (Bronze) - Crítico para Tráfego p/ WhatsApp
-                if (resultsCount === 0) resultsCount = sumActionValue('omni_messaging_conversation_started');
-                if (resultsCount === 0) resultsCount = sumActionValue('messaging_conversation_started');
-                
-                // Nível 4: Engajamentos Específicos (Se não for tráfego puro)
-                // Se não achamos Venda/Lead/Conversa, pode ser campanha de Engajamento ou App
-                if (resultsCount === 0 && !isTraffic && !isAwareness) {
-                    if (resultsCount === 0) resultsCount = sumActionValue('schedule'); // Agendamentos
-                    if (resultsCount === 0) resultsCount = sumActionValue('complete_registration');
-                    if (resultsCount === 0) resultsCount = sumActionValue('submit_application');
+                if (isTraffic) {
+                    // LÓGICA ESPECÍFICA PARA TRÁFEGO
+                    // Prioriza Conversas (WhatsApp) sobre Cliques.
+                    // IGNORA Leads/Contacts para evitar ruído (ex: 2 contatos vs 52 conversas).
+                    
+                    // 1. Vendas Reais (Ouro)
+                    if (resultsCount === 0) resultsCount = getExactValue('purchase');
+                    
+                    // 2. Conversas (Prata) - Soma tudo que for mensagem
+                    if (resultsCount === 0) resultsCount = sumActionValue('messaging_conversation_started');
+                    
+                    // 3. Fallback (Bronze) - Cliques no Link
+                    if (resultsCount === 0) {
+                        resultsCount = inlineLinkClicks;
+                         // Se inlineLinkClicks for 0, tenta clicks gerais como último recurso
+                        if (resultsCount === 0) resultsCount = clicks;
+                    }
+
+                } else {
+                    // LÓGICA PADRÃO (Vendas, Engajamento, etc)
+                    
+                    // Nível 1: Vendas Reais
+                    if (resultsCount === 0) resultsCount = getExactValue('purchase');
+                    
+                    // Nível 2: Leads e Cadastros
+                    if (resultsCount === 0) resultsCount = sumActionValue('leads');
+                    if (resultsCount === 0) resultsCount = sumActionValue('lead');
+                    
+                    // Nível 3: Conversas Iniciadas
+                    if (resultsCount === 0) resultsCount = sumActionValue('omni_messaging_conversation_started');
+                    if (resultsCount === 0) resultsCount = sumActionValue('messaging_conversation_started');
+                    
+                    // Nível 4: Engajamentos Específicos
+                    if (resultsCount === 0 && !isAwareness) {
+                        if (resultsCount === 0) resultsCount = sumActionValue('schedule');
+                        if (resultsCount === 0) resultsCount = sumActionValue('complete_registration');
+                        if (resultsCount === 0) resultsCount = sumActionValue('submit_application');
+                    }
+                    
+                    // Nível 5: Fallback para Reconhecimento
+                    if (resultsCount === 0 && isAwareness) {
+                        resultsCount = reach;
+                    }
                 }
 
-                // Nível 5: Fallback para Tráfego (Cliques)
-                // Se não achou NADA acima (vendas, leads, conversas) e é campanha de Tráfego,
-                // então o resultado é o Clique no Link.
-                if (resultsCount === 0 && isTraffic) {
-                    resultsCount = inlineLinkClicks;
-                    // Se inlineLinkClicks for 0, tenta clicks gerais como último recurso
-                    if (resultsCount === 0) resultsCount = clicks;
-                }
-
-                // Nível 6: Fallback para Reconhecimento (Alcance)
-                let isReachBased = false;
-                if (resultsCount === 0 && isAwareness) {
-                    resultsCount = reach;
-                    isReachBased = true;
-                }
+                // Flag auxiliar para saber se o resultado é baseado em Alcance (para ajustar o Custo por Resultado)
+                const isReachBased = isAwareness && resultsCount === reach;
 
                 // Cálculos de Taxas
                 const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
