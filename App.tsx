@@ -7,8 +7,6 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import SubscriptionGate from './components/SubscriptionGate';
-import PrivacyPolicy from './components/PrivacyPolicy';
-import TermsOfService from './components/TermsOfService';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
 import { getSubscriptionStatus } from './services/subscriptionService';
 import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption, UserSubscription } from './types';
@@ -32,15 +30,6 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
 ];
 
 const App: React.FC = () => {
-    // Simple Routing Logic
-    const [currentPath, setCurrentPath] = useState(window.location.pathname);
-
-    useEffect(() => {
-        const handleLocationChange = () => setCurrentPath(window.location.pathname);
-        window.addEventListener('popstate', handleLocationChange);
-        return () => window.removeEventListener('popstate', handleLocationChange);
-    }, []);
-
     // Authentication State
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
     
@@ -85,9 +74,6 @@ const App: React.FC = () => {
 
     // Check authentication status on initial load
     useEffect(() => {
-        // Skip auth check if on public pages
-        if (currentPath === '/privacy' || currentPath === '/terms') return;
-
         const checkAuthStatus = async () => {
             setIsLoadingAccounts(true);
             setError(null);
@@ -112,7 +98,7 @@ const App: React.FC = () => {
             }
         };
         checkAuthStatus();
-    }, [handleAuthenticationError, checkSubscription, currentPath]);
+    }, [handleAuthenticationError, checkSubscription]);
     
     const handleLogout = async () => {
         await logout();
@@ -189,14 +175,15 @@ const App: React.FC = () => {
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
             
             // FIX: Apply 1000x multiplier for Awareness campaigns in Chart as well
-            // We check if 'results' are closer to 'reach' (approximate check) or if objective is Awareness based (hard to check here without objective prop on aggregated, assuming results>reach logic or just re-using table logic)
-            // Better: Let's just calculate standard Cost per Result. If Awareness, the "result" is Reach, so we want Cost Per 1000 Reach.
-            // Since we aggregated, we lost the specific 'objective' field per row. However, selectedLevel usually implies context.
-            // To be safe, we will use simple division here. The Table handles the "Cost per 1000 Reach" logic more precisely because it has the raw API data.
-            // For the chart, if the user selects "Results" metric, it will show raw results.
-            // If they select Cost Per Result? We don't have that as a chart metric option currently in 'chartMetrics' constant.
-            // So we only need to ensure 'results' count is correct.
+            // If user selected results metric for chart, logic handles aggregation. 
+            // For derived metrics like CPR, we recalculate.
+            // Since aggregated data loses granular 'objective', we use basic CPR logic here for charts,
+            // relying on the user to interpret context.
             totals.costPerResult = totals.results > 0 ? totals.amountSpent / totals.results : 0;
+            
+            // Heuristic: if results approximate reach and CPM is low, it might be Awareness.
+            // But without explicit objective on aggregated data, safe to leave as standard CPR for trend lines.
+            // The table provides the precise breakdown.
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
@@ -218,7 +205,6 @@ const App: React.FC = () => {
         const summaryData = kpiData.filter(d => d.isPeriodTotal);
         
         // If for some reason summary is missing but we have daily data (fallback case), we aggregate manually.
-        // But based on new API logic, summaryData should be present.
         if (summaryData.length > 0) {
             return summaryData;
         }
@@ -331,14 +317,6 @@ const App: React.FC = () => {
             </div>
         </div>
     );
-
-    // PUBLIC PAGES ROUTING
-    if (currentPath === '/privacy') {
-        return <PrivacyPolicy />;
-    }
-    if (currentPath === '/terms') {
-        return <TermsOfService />;
-    }
 
     const AuthContent = () => {
         if (isAuthenticated === null) {

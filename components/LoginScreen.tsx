@@ -42,9 +42,9 @@ const LoginScreen: React.FC = () => {
                 </a>
                 
                 <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                    <a href="/privacy" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Política de Privacidade</a>
+                    <a href="https://www.mindfulmarketing.com.br/lgpd-mind-dash" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Política de Privacidade</a>
                     <span className="hidden sm:inline">•</span>
-                    <a href="/terms" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Termos de Serviço</a>
+                    <a href="https://www.mindfulmarketing.com.br/termos-de-uso-mind-dash" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Termos de Serviço</a>
                 </div>
              </div>
         </div>
