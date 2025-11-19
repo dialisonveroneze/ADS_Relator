@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 // Estas constantes seriam idealmente carregadas de variáveis de ambiente do build,
@@ -27,6 +28,12 @@ const LoginScreen: React.FC = () => {
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="currentColor"><path d="M12 2.04c-5.52 0-10 4.48-10 10s4.48 10 10 10 10-4.48 10-10-4.48-10-10-10zm2.25 10.5h-2.25v6h-3v-6h-1.5v-2.5h1.5v-2c0-1.29.67-2.5 2.5-2.5h2.25v2.5h-1.5c-.28 0-.5.22-.5.5v1.5h2.25l-.25 2.5z"/></svg>
                     Conectar com o Meta
                 </a>
+                
+                <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="/privacy" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Política de Privacidade</a>
+                    <span className="hidden sm:inline">•</span>
+                    <a href="/terms" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Termos de Serviço</a>
+                </div>
              </div>
         </div>
     );

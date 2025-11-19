@@ -7,6 +7,8 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import SubscriptionGate from './components/SubscriptionGate';
+import PrivacyPolicy from './components/PrivacyPolicy';
+import TermsOfService from './components/TermsOfService';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
 import { getSubscriptionStatus } from './services/subscriptionService';
 import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption, UserSubscription } from './types';
@@ -30,6 +32,15 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
 ];
 
 const App: React.FC = () => {
+    // Simple Routing Logic
+    const [currentPath, setCurrentPath] = useState(window.location.pathname);
+
+    useEffect(() => {
+        const handleLocationChange = () => setCurrentPath(window.location.pathname);
+        window.addEventListener('popstate', handleLocationChange);
+        return () => window.removeEventListener('popstate', handleLocationChange);
+    }, []);
+
     // Authentication State
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
     
@@ -74,6 +85,9 @@ const App: React.FC = () => {
 
     // Check authentication status on initial load
     useEffect(() => {
+        // Skip auth check if on public pages
+        if (currentPath === '/privacy' || currentPath === '/terms') return;
+
         const checkAuthStatus = async () => {
             setIsLoadingAccounts(true);
             setError(null);
@@ -98,7 +112,7 @@ const App: React.FC = () => {
             }
         };
         checkAuthStatus();
-    }, [handleAuthenticationError, checkSubscription]);
+    }, [handleAuthenticationError, checkSubscription, currentPath]);
     
     const handleLogout = async () => {
         await logout();
@@ -308,6 +322,14 @@ const App: React.FC = () => {
             </div>
         </div>
     );
+
+    // PUBLIC PAGES ROUTING
+    if (currentPath === '/privacy') {
+        return <PrivacyPolicy />;
+    }
+    if (currentPath === '/terms') {
+        return <TermsOfService />;
+    }
 
     const AuthContent = () => {
         if (isAuthenticated === null) {
