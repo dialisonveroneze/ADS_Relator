@@ -226,22 +226,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     { key: 'purchase', mode: 'exact_first' as const },
                     { key: 'schedule', mode: 'sum_partial' as const },
                     { key: 'complete_registration', mode: 'sum_partial' as const },
-                    { key: 'submit_application', mode: 'sum_partial' as const },
-                    { key: 'mobile_app_install', mode: 'sum_partial' as const }
+                    { key: 'contact', mode: 'sum_partial' as const }, // Generic contact
+                    { key: 'submit_application', mode: 'sum_partial' as const }
                 ];
                 
+                // Check for Traffic or Engagement (including legacy names)
+                const isTrafficOrEngagement = 
+                    objective === 'OUTCOME_ENGAGEMENT' || 
+                    objective === 'OUTCOME_TRAFFIC' || 
+                    objective === 'TRAFFIC' || 
+                    objective === 'MESSAGES' ||
+                    objective === 'POST_ENGAGEMENT';
+
                 // Determine priority order
-                if (objective === 'OUTCOME_ENGAGEMENT' || objective === 'OUTCOME_TRAFFIC') {
+                if (isTrafficOrEngagement) {
                     // For Engagement/Traffic, prioritize Conversations first
+                    // Also included 'contact' which sometimes is used for messaging clicks
                     conversionPriorities = [
                         { key: 'messaging_conversation_started', mode: 'sum_partial' },
+                        { key: 'contact', mode: 'sum_partial' },
                         { key: 'leads', mode: 'sum_partial' },
                         { key: 'lead', mode: 'sum_partial' },
                         { key: 'purchase', mode: 'exact_first' },
                         { key: 'schedule', mode: 'sum_partial' },
                         { key: 'complete_registration', mode: 'sum_partial' }
                     ];
-                } else if (objective === 'OUTCOME_SALES') {
+                } else if (objective === 'OUTCOME_SALES' || objective === 'CONVERSIONS') {
                     // For Sales, prioritize Purchase
                     conversionPriorities = [
                         { key: 'purchase', mode: 'exact_first' },
@@ -273,8 +283,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         }
                     } else {
                         // SMART SUM LOGIC:
-                        // First, check for common exact keys to avoid double counting (e.g. aggregate + attribution)
-                        // This fixes duplicate counting in standard cases
+                        // First, check for common exact keys to avoid double counting
                         const exactKeys = [
                             `onsite_conversion.${priority.key}_7d`,
                             `${priority.key}_7d`,
@@ -302,7 +311,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         }
 
                         // Second, if no standard key found, fallback to summing partial matches
-                        // This handles split attribution cases (e.g. _7d_click + _1d_view)
                         const matches = actions.filter((a: any) => a.action_type.includes(priority.key));
                         if (matches.length > 0) {
                             const sum = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
@@ -317,7 +325,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 // 2. If NO conversions found, fall back to Objective-based metrics
                 let isReachBased = false;
                 if (resultsCount === 0) {
-                    if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS') {
+                    if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS' || objective === 'TRAFFIC') {
                         resultsCount = inlineLinkClicks;
                     } 
                     else if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
