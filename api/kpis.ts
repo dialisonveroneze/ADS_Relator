@@ -184,11 +184,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const objective = item.objective;
                 const actions = item.actions || [];
 
-                // ----------- ALGORITMO WATERFALL DE RESULTADOS -----------
+                // ----------- ALGORITMO WATERFALL DE RESULTADOS (V3.0) -----------
                 let resultsCount = 0;
 
                 // 1. Detecção de Objetivo baseado em NOME + API
-                // Se o nome contiver "reconhecimento", "video view", "branding", força isAwareness
                 const nameLower = entityName.toLowerCase();
                 const isNameBasedAwareness = 
                     nameLower.includes('reconhecimento') || 
@@ -209,82 +208,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     objective === 'TRAFFIC' || 
                     objective === 'LINK_CLICKS';
 
-                // Funções auxiliares
+                // --- FUNÇÕES DE BUSCA INTELIGENTE ---
+                
                 const getExactValue = (key: string) => {
                     const match = actions.find((a: any) => a.action_type === key);
                     return match ? parseFloat(match.value) : 0;
                 };
 
-                const getMessagingTotal = () => {
-                    // Pega tudo que tem 'messaging_conversation_started'
-                    const msgs = actions.filter((a: any) => a.action_type.includes('messaging_conversation_started'));
-                    if (msgs.length === 0) return 0;
+                const getBestMessagingCount = () => {
+                    // Tenta pegar o Omnichannel primeiro (Geralmente é a métrica principal de 'Resultados')
+                    const omni = actions.find((a: any) => a.action_type === 'omni_messaging_conversation_started');
+                    if (omni) return parseFloat(omni.value);
 
-                    // Procura por chaves granulares (ex: _7d, _1d_view)
-                    const granular = msgs.filter((a: any) => a.action_type.match(/_\d+d(_view)?$/));
-                    
-                    if (granular.length > 0) {
-                        // Soma apenas as partes distintas
-                        return granular.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
-                    }
-                    // Fallback: Pega o maior valor encontrado (Total Unificado)
-                    return Math.max(...msgs.map((a: any) => parseFloat(a.value)));
-                };
-
-                const getTrafficMessagingTotal = () => {
-                    // Para tráfego p/ whatsApp, procuramos conversas ou cliques no whatsapp
-                    // Prioriza Conversas Reais
-                    const conversations = getMessagingTotal();
-                    if (conversations > 0) return conversations;
-
-                    // Se não, tenta omni_messaging ou click_to_whatsapp
-                    const whatsappActions = actions.filter((a: any) => 
-                        a.action_type === 'onsite_conversion.messaging_conversation_started_7d' ||
-                        a.action_type === 'omni_messaging_conversation_started_7d' ||
-                        a.action_type === 'contact_total' || // Em alguns casos raros
-                        (a.action_type.includes('whatsapp') && !a.action_type.includes('view'))
+                    // Se não, procura por onsite_conversion ou messaging_conversation_started
+                    // E tenta somar as atribuições granulares (ex: 7d + 1d view)
+                    const granular = actions.filter((a: any) => 
+                        (a.action_type.includes('onsite_conversion.messaging_conversation_started') || 
+                         a.action_type.includes('messaging_conversation_started_7d')) &&
+                        !a.action_type.includes('omni') // Evita duplicar com omni se ele existisse mas fosse 0
                     );
                     
-                    // Retorna o maior valor encontrado para evitar soma de duplicatas
-                    if (whatsappActions.length > 0) {
-                        return Math.max(...whatsappActions.map((a: any) => parseFloat(a.value)));
+                    if (granular.length > 0) {
+                         return granular.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
                     }
+
+                    // Último caso: qualquer coisa com whatsapp ou messaging
+                    const broad = actions.filter((a: any) => 
+                         a.action_type.includes('messaging_conversation_started') ||
+                         a.action_type === 'click_to_whatsapp'
+                    );
+                    
+                    if (broad.length > 0) {
+                        return Math.max(...broad.map((a: any) => parseFloat(a.value)));
+                    }
+
                     return 0;
                 };
 
 
-                // --- APLICAÇÃO DA LÓGICA DE PRIORIDADE ---
+                // --- APLICAÇÃO DA LÓGICA ---
 
-                // REGRA 1: Se é Reconhecimento (por API ou Nome), Resultado = Alcance. PONTO FINAL.
                 if (isAwareness) {
+                    // REGRA 1: Reconhecimento SEMPRE é Alcance
                     resultsCount = reach;
-                }
+                } 
+                else if (isTraffic) {
+                    // REGRA 2: Tráfego
+                    // Prioriza Conversas REAIS. Ignora Leads/Contatos (ruído).
+                    // Se não tiver conversa, cai para Cliques no Link.
+                    const msgs = getBestMessagingCount();
+                    if (msgs > 0) {
+                        resultsCount = msgs;
+                    } else {
+                        resultsCount = inlineLinkClicks > 0 ? inlineLinkClicks : clicks;
+                    }
+                } 
                 else {
-                    // REGRA 2: Busca Vendas (Prioridade Ouro)
-                    resultsCount = getExactValue('purchase');
+                    // REGRA 3: Vendas / Engajamento / Leads
+                    // Aqui temos o conflito: Campanha de Venda que gera Mensagem (Carros) vs E-commerce
+                    
+                    const purchases = getExactValue('purchase');
+                    const leads = getExactValue('leads') || getExactValue('lead') || getExactValue('schedule');
+                    const messages = getBestMessagingCount();
 
-                    // REGRA 3: Busca Conversas (Prioridade Prata)
+                    // Lógica de Predominância: Quem tiver o maior volume vence.
+                    // Ex: 120 Mensagens vs 2 Compras -> Mensagens vence.
+                    // Ex: 50 Compras vs 0 Mensagens -> Compras vence.
+                    resultsCount = Math.max(purchases, messages, leads);
+                    
+                    // Fallback final se tudo for 0
                     if (resultsCount === 0) {
-                        // Se for Tráfego, usa a lógica estrita para evitar ruído (ex: leads falsos)
-                        if (isTraffic) {
-                             resultsCount = getTrafficMessagingTotal();
-                        } else {
-                             resultsCount = getMessagingTotal();
-                        }
-                    }
-
-                    // REGRA 4: Busca Leads/Cadastros (Prioridade Bronze)
-                    // APENAS se NÃO for Tráfego (para evitar que cliques de botão virem leads falsos em campanhas de tráfego)
-                    if (resultsCount === 0 && !isTraffic) {
-                        resultsCount = getExactValue('leads') || getExactValue('lead') || getExactValue('schedule');
-                    }
-
-                    // REGRA 5: Fallback para Tráfego (Base)
-                    // Se é tráfego e não achou venda nem conversa -> Cliques no Link
-                    if (resultsCount === 0 && isTraffic) {
-                        resultsCount = inlineLinkClicks;
-                        // Último recurso: Cliques gerais
-                        if (resultsCount === 0) resultsCount = clicks;
+                         // Tenta encontrar métricas de cadastro ou contato se nada acima existiu
+                         resultsCount = getExactValue('onsite_conversion.lead_grouped') || 0;
                     }
                 }
 
