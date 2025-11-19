@@ -218,7 +218,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 // Priority Configuration: Dynamic based on Objective
                 let conversionPriorities: { key: string, mode: 'exact_first' | 'sum_partial' }[] = [];
 
-                // Common conversion types
+                // Common conversion types definitions
                 const conversions = [
                     { key: 'messaging_conversation_started', mode: 'sum_partial' as const },
                     { key: 'leads', mode: 'sum_partial' as const },
@@ -226,43 +226,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     { key: 'purchase', mode: 'exact_first' as const },
                     { key: 'schedule', mode: 'sum_partial' as const },
                     { key: 'complete_registration', mode: 'sum_partial' as const },
-                    { key: 'contact', mode: 'sum_partial' as const }, // Generic contact
                     { key: 'submit_application', mode: 'sum_partial' as const }
                 ];
                 
-                // Check for Traffic or Engagement (including legacy names)
-                const isTrafficOrEngagement = 
-                    objective === 'OUTCOME_ENGAGEMENT' || 
-                    objective === 'OUTCOME_TRAFFIC' || 
-                    objective === 'TRAFFIC' || 
-                    objective === 'MESSAGES' ||
-                    objective === 'POST_ENGAGEMENT';
+                const isTraffic = objective === 'OUTCOME_TRAFFIC' || objective === 'TRAFFIC';
+                const isEngagement = objective === 'OUTCOME_ENGAGEMENT' || objective === 'MESSAGES' || objective === 'POST_ENGAGEMENT';
+                const isSales = objective === 'OUTCOME_SALES' || objective === 'CONVERSIONS';
 
-                // Determine priority order
-                if (isTrafficOrEngagement) {
-                    // For Engagement/Traffic, prioritize Conversations first
-                    // Also included 'contact' which sometimes is used for messaging clicks
+                if (isTraffic) {
+                    // TRAFFIC STRATEGY:
+                    // Strict focus on High Value (Conversations/Purchase) only.
+                    // IGNORE leads/schedule/contact/application here to prevent noise (e.g., button clicks tracked as leads).
+                    // If no Conversation/Purchase found, fallback to Link Clicks logic below.
                     conversionPriorities = [
                         { key: 'messaging_conversation_started', mode: 'sum_partial' },
-                        { key: 'contact', mode: 'sum_partial' },
+                        { key: 'purchase', mode: 'exact_first' }
+                    ];
+                } 
+                else if (isEngagement) {
+                    // ENGAGEMENT STRATEGY:
+                    // Prioritize Conversations, then standard engagement conversions.
+                    conversionPriorities = [
+                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
                         { key: 'leads', mode: 'sum_partial' },
                         { key: 'lead', mode: 'sum_partial' },
                         { key: 'purchase', mode: 'exact_first' },
                         { key: 'schedule', mode: 'sum_partial' },
-                        { key: 'complete_registration', mode: 'sum_partial' }
+                        { key: 'complete_registration', mode: 'sum_partial' },
+                        { key: 'submit_application', mode: 'sum_partial' }
                     ];
-                } else if (objective === 'OUTCOME_SALES' || objective === 'CONVERSIONS') {
-                    // For Sales, prioritize Purchase
+                } 
+                else if (isSales) {
+                    // SALES STRATEGY:
+                    // Purchase is king.
                     conversionPriorities = [
                         { key: 'purchase', mode: 'exact_first' },
                         { key: 'leads', mode: 'sum_partial' },
                         { key: 'lead', mode: 'sum_partial' },
                         { key: 'messaging_conversation_started', mode: 'sum_partial' },
-                         // ...others
-                         ...conversions.filter(c => !['purchase', 'leads', 'lead', 'messaging_conversation_started'].includes(c.key))
+                        // ...others
+                        ...conversions.filter(c => !['purchase', 'leads', 'lead', 'messaging_conversation_started'].includes(c.key))
                     ];
-                } else {
-                    // Default / Leads / Awareness
+                } 
+                else {
+                    // DEFAULT / AWARENESS:
+                    // Broad check.
                      conversionPriorities = [
                         { key: 'leads', mode: 'sum_partial' },
                         { key: 'lead', mode: 'sum_partial' },
@@ -272,18 +280,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                      ];
                 }
 
-                // 1. Check for High Value Conversions
+                // 1. Check for Conversions based on Priority List
                 for (const priority of conversionPriorities) {
                     if (priority.mode === 'exact_first') {
-                        // Try exact match first (e.g. 'purchase' which is an aggregate)
+                        // Try exact match first
                         let exactMatch = actions.find((a: any) => a.action_type === priority.key);
                         if (exactMatch) {
                             resultsCount = parseFloat(exactMatch.value);
-                            if (resultsCount > 0) break; // Only break if we found a positive value
+                            if (resultsCount > 0) break;
                         }
                     } else {
-                        // SMART SUM LOGIC:
-                        // First, check for common exact keys to avoid double counting
+                        // SMART SUM LOGIC (handles attribution split)
                         const exactKeys = [
                             `onsite_conversion.${priority.key}_7d`,
                             `${priority.key}_7d`,
@@ -310,7 +317,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                             break;
                         }
 
-                        // Second, if no standard key found, fallback to summing partial matches
+                        // Partial match sum
                         const matches = actions.filter((a: any) => a.action_type.includes(priority.key));
                         if (matches.length > 0) {
                             const sum = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
@@ -322,10 +329,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     }
                 }
 
-                // 2. If NO conversions found, fall back to Objective-based metrics
+                // 2. Fallback to Objective-based metrics if no conversions found
                 let isReachBased = false;
                 if (resultsCount === 0) {
-                    if (objective === 'OUTCOME_TRAFFIC' || objective === 'LINK_CLICKS' || objective === 'TRAFFIC') {
+                    if (isTraffic || objective === 'LINK_CLICKS') {
                         resultsCount = inlineLinkClicks;
                     } 
                     else if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
