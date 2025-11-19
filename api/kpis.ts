@@ -210,43 +210,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const clicks = parseInt(item?.clicks ?? '0', 10);
                 const inlineLinkClicks = parseInt(item?.inline_link_clicks ?? '0', 10);
                 
-                // ----------- DYNAMIC RESULTS LOGIC -----------
+                // ----------- ALGORITMO DE CÁLCULO DE RESULTADOS -----------
                 let resultsCount = 0;
                 const objective = item.objective;
                 const actions = item.actions || [];
                 
-                // Priority Configuration: Dynamic based on Objective
                 let conversionPriorities: { key: string, mode: 'exact_first' | 'sum_partial' }[] = [];
 
-                // Common conversion types definitions
-                const conversions = [
-                    { key: 'messaging_conversation_started', mode: 'sum_partial' as const },
-                    { key: 'leads', mode: 'sum_partial' as const },
-                    { key: 'lead', mode: 'sum_partial' as const },
-                    { key: 'purchase', mode: 'exact_first' as const },
-                    { key: 'schedule', mode: 'sum_partial' as const },
-                    { key: 'complete_registration', mode: 'sum_partial' as const },
-                    { key: 'submit_application', mode: 'sum_partial' as const }
-                ];
-                
                 const isTraffic = objective === 'OUTCOME_TRAFFIC' || objective === 'TRAFFIC';
                 const isEngagement = objective === 'OUTCOME_ENGAGEMENT' || objective === 'MESSAGES' || objective === 'POST_ENGAGEMENT';
                 const isSales = objective === 'OUTCOME_SALES' || objective === 'CONVERSIONS';
 
                 if (isTraffic) {
-                    // TRAFFIC STRATEGY:
-                    // Strict focus on High Value (Conversations/Purchase) only.
-                    // IGNORE leads/schedule/contact/application here to prevent noise (e.g., button clicks tracked as leads).
-                    // If no Conversation/Purchase found, fallback to Link Clicks logic below.
+                    // ESTRATÉGIA DE TRÁFEGO (Inclui WhatsApp)
+                    // 1. Procura conversas/WhatsApp primeiro (para campanhas de Tráfego p/ Whats)
+                    // 2. Procura Compras (caso raro, mas possível)
+                    // 3. SE NÃO ACHAR NADA -> Fallback para Cliques no Link (padrão Tráfego Site)
                     conversionPriorities = [
+                        { key: 'omni_messaging_conversation_started', mode: 'sum_partial' },
                         { key: 'messaging_conversation_started', mode: 'sum_partial' },
+                        { key: 'click_to_whatsapp', mode: 'sum_partial' },
+                        { key: 'whatsapp', mode: 'sum_partial' },
                         { key: 'purchase', mode: 'exact_first' }
                     ];
                 } 
                 else if (isEngagement) {
-                    // ENGAGEMENT STRATEGY:
-                    // Prioritize Conversations, then standard engagement conversions.
+                    // ESTRATÉGIA DE ENGAJAMENTO
+                    // Prioriza Conversas, depois Leads, depois outros engajamentos.
                     conversionPriorities = [
+                        { key: 'omni_messaging_conversation_started', mode: 'sum_partial' },
                         { key: 'messaging_conversation_started', mode: 'sum_partial' },
                         { key: 'leads', mode: 'sum_partial' },
                         { key: 'lead', mode: 'sum_partial' },
@@ -257,40 +249,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     ];
                 } 
                 else if (isSales) {
-                    // SALES STRATEGY:
-                    // Purchase is king.
+                    // ESTRATÉGIA DE VENDAS
+                    // Purchase é a prioridade máxima.
                     conversionPriorities = [
                         { key: 'purchase', mode: 'exact_first' },
                         { key: 'leads', mode: 'sum_partial' },
                         { key: 'lead', mode: 'sum_partial' },
                         { key: 'messaging_conversation_started', mode: 'sum_partial' },
-                        // ...others
-                        ...conversions.filter(c => !['purchase', 'leads', 'lead', 'messaging_conversation_started'].includes(c.key))
+                        { key: 'schedule', mode: 'sum_partial' },
+                        { key: 'complete_registration', mode: 'sum_partial' }
                     ];
                 } 
                 else {
-                    // DEFAULT / AWARENESS:
-                    // Broad check.
+                    // OUTROS / RECONHECIMENTO
+                    // Busca genérica, mas geralmente vai cair no fallback de Alcance.
                      conversionPriorities = [
                         { key: 'leads', mode: 'sum_partial' },
                         { key: 'lead', mode: 'sum_partial' },
                         { key: 'purchase', mode: 'exact_first' },
-                        { key: 'messaging_conversation_started', mode: 'sum_partial' },
-                        ...conversions.filter(c => !['purchase', 'leads', 'lead', 'messaging_conversation_started'].includes(c.key))
+                        { key: 'messaging_conversation_started', mode: 'sum_partial' }
                      ];
                 }
 
-                // 1. Check for Conversions based on Priority List
+                // 1. Tenta encontrar conversões na lista de prioridades
                 for (const priority of conversionPriorities) {
                     if (priority.mode === 'exact_first') {
-                        // Try exact match first
+                        // Busca exata (útil para purchase pixel vs purchase meta)
                         let exactMatch = actions.find((a: any) => a.action_type === priority.key);
                         if (exactMatch) {
                             resultsCount = parseFloat(exactMatch.value);
                             if (resultsCount > 0) break;
                         }
                     } else {
-                        // SMART SUM LOGIC (handles attribution split)
+                        // Soma Inteligente (Lida com janelas de atribuição: _1d, _7d, _28d)
+                        // Primeiro tenta match exato das chaves de atribuição
                         const exactKeys = [
                             `onsite_conversion.${priority.key}_7d`,
                             `${priority.key}_7d`,
@@ -313,11 +305,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                              }
                         }
 
-                        if (foundExact) {
-                            break;
-                        }
+                        if (foundExact) break;
 
-                        // Partial match sum
+                        // Se não achar exato, soma qualquer variação que contenha a chave
+                        // (Ex: click_to_whatsapp_7d_click + click_to_whatsapp_1d_view)
                         const matches = actions.filter((a: any) => a.action_type.includes(priority.key));
                         if (matches.length > 0) {
                             const sum = matches.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
@@ -329,13 +320,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     }
                 }
 
-                // 2. Fallback to Objective-based metrics if no conversions found
+                // 2. Fallback (Plano B): Se não achou conversão nenhuma
                 let isReachBased = false;
                 if (resultsCount === 0) {
                     if (isTraffic || objective === 'LINK_CLICKS') {
+                        // Para Tráfego Site -> Usa Cliques no Link
                         resultsCount = inlineLinkClicks;
                     } 
                     else if (objective === 'OUTCOME_AWARENESS' || objective === 'BRAND_AWARENESS' || objective === 'REACH') {
+                        // Para Reconhecimento -> Usa Alcance
                         resultsCount = reach;
                         isReachBased = true;
                     }
@@ -346,7 +339,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const cpc = clicks > 0 ? spend / clicks : 0;
                 const costPerInlineLinkClick = inlineLinkClicks > 0 ? spend / inlineLinkClicks : 0;
                 
-                // Cost Per Result Calculation
+                // Custo por Resultado
+                // Se for baseada em alcance, multiplica por 1000 (CPM padrão de mercado)
                 const costPerResult = resultsCount > 0 
                     ? (spend / resultsCount) * (isReachBased ? 1000 : 1) 
                     : 0;
@@ -360,7 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     entityId: entityId,
                     name: entityName,
                     level: typedLevel,
-                    date: item.date_start, // YYYY-MM-DD
+                    date: item.date_start,
                     amountSpent: spend,
                     impressions: impressions,
                     reach: reach,
@@ -381,7 +375,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const dailyFormatted = processData(dailyRaw, false);
         const summaryFormatted = processData(summaryRaw, true);
 
-        // Return combined dataset
+        // Retorna o conjunto combinado
         res.status(200).json([...dailyFormatted, ...summaryFormatted]);
 
     } catch (error: any) {
