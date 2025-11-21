@@ -1,11 +1,12 @@
 
 // api/payment-success.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import Stripe from 'stripe';
 import cookie from 'cookie';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    const { session_id } = req.query;
+    // O Mercado Pago retorna vários parâmetros na URL de sucesso, como:
+    // collection_id, collection_status, payment_id, status, external_reference, etc.
+    const { status, collection_status, mock } = req.query;
 
     // Função auxiliar para ativar a assinatura via cookie
     const activateSubscription = () => {
@@ -18,38 +19,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }));
     };
 
-    if (!session_id || typeof session_id !== 'string') {
-        return res.redirect(302, '/');
-    }
+    // Verifica se o status é 'approved' (padrão MP) ou se é um mock
+    const isApproved = status === 'approved' || collection_status === 'approved' || mock === 'true';
 
-    // 1. Verifica se é uma sessão simulada (Mock)
-    if (session_id === 'mock_session_id_dev') {
+    if (isApproved) {
         activateSubscription();
+        // Redireciona para a home limpa
         return res.redirect(302, '/');
-    }
-
-    // 2. Verifica pagamento real no Stripe
-    if (process.env.STRIPE_SECRET_KEY) {
-        try {
-            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-                apiVersion: '2023-10-16',
-            });
-
-            const session = await stripe.checkout.sessions.retrieve(session_id);
-
-            if (session.payment_status === 'paid') {
-                activateSubscription();
-            }
-            
-            return res.redirect(302, '/');
-
-        } catch (error) {
-            console.error("Erro ao validar pagamento:", error);
-            return res.redirect(302, '/?error=payment_validation_failed');
-        }
     } else {
-        // Se chegou aqui com um ID real mas sem chave configurada, libera por segurança (fallback dev)
-        activateSubscription();
-        return res.redirect(302, '/');
+        // Se chegou aqui mas não está aprovado ou cancelou
+        console.warn("Pagamento não aprovado ou cancelado:", req.query);
+        return res.redirect(302, '/?error=payment_failed');
     }
 }

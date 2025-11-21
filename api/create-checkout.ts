@@ -1,7 +1,6 @@
 
 // api/create-checkout.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import Stripe from 'stripe';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
@@ -13,50 +12,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const origin = `${protocol}://${host}`;
 
     // MODO SIMULAÇÃO (FALLBACK)
-    // Se não houver chave do Stripe configurada, simula o fluxo para não quebrar a aplicação.
-    if (!process.env.STRIPE_SECRET_KEY) {
-        console.warn("Stripe Key ausente. Usando modo de simulação.");
-        
-        // Retorna uma URL que vai direto para o sucesso, simulando o pagamento
+    // Se não houver Token do Mercado Pago, usa o modo de teste local.
+    if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
+        console.warn("MERCADOPAGO_ACCESS_TOKEN ausente. Usando modo de simulação.");
         return res.status(200).json({ 
-            url: `${origin}/api/payment-success?session_id=mock_session_id_dev` 
+            url: `${origin}/api/payment-success?status=approved&mock=true` 
         });
     }
 
     try {
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-            apiVersion: '2023-10-16',
-        });
-
-        // Cria a sessão de checkout real
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'], 
-            line_items: [
-                {
-                    price_data: {
-                        currency: 'brl',
-                        product_data: {
-                            name: 'Assinatura ADS Relator Pro',
-                            description: 'Acesso ilimitado ao dashboard e relatórios avançados.',
-                        },
-                        unit_amount: 1990, // R$ 19,90
-                        recurring: {
-                            interval: 'month',
-                        },
-                    },
-                    quantity: 1,
+        // Criação da Preferência de Pagamento via API REST do Mercado Pago
+        const mpResponse = await fetch('https://api.mercadopago.com/checkout/preferences', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`
+            },
+            body: JSON.stringify({
+                items: [
+                    {
+                        title: 'Assinatura ADS Relator Pro (Mensal)',
+                        description: 'Acesso ilimitado ao dashboard de performance.',
+                        quantity: 1,
+                        currency_id: 'BRL',
+                        unit_price: 19.90
+                    }
+                ],
+                back_urls: {
+                    success: `${origin}/api/payment-success`,
+                    failure: `${origin}/`,
+                    pending: `${origin}/`
                 },
-            ],
-            mode: 'subscription',
-            success_url: `${origin}/api/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${origin}/`,
+                auto_return: "approved",
+                statement_descriptor: "ADS RELATOR",
+                external_reference: `user_${Date.now()}` // Idealmente seria o ID do usuário
+            })
         });
 
-        return res.status(200).json({ url: session.url });
+        const mpData = await mpResponse.json();
+
+        if (!mpResponse.ok) {
+            console.error('Erro Mercado Pago:', mpData);
+            throw new Error(mpData.message || 'Erro ao criar preferência no Mercado Pago');
+        }
+
+        // Retorna o link do checkout (init_point para produção, sandbox_init_point para testes)
+        // Usamos init_point padrão, o ambiente depende do Token usado.
+        return res.status(200).json({ url: mpData.init_point });
 
     } catch (error: any) {
-        console.error("Stripe Error:", error);
-        // Retorna o erro JSON para o frontend tratar em vez de estourar 500 genérico
+        console.error("Erro no Checkout:", error);
         return res.status(500).json({ message: error.message || 'Erro ao criar sessão de pagamento.' });
     }
 }
