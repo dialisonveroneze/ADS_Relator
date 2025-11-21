@@ -7,7 +7,6 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import SubscriptionGate from './components/SubscriptionGate';
-import IntegrationSelector from './components/IntegrationSelector';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
 import { getSubscriptionStatus } from './services/subscriptionService';
 import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption, UserSubscription } from './types';
@@ -30,15 +29,10 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
     { key: 'last_month', label: 'Mês Passado' },
 ];
 
-type ViewState = 'dashboard' | 'integrations';
-
 const App: React.FC = () => {
     // Authentication State
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
     
-    // View State
-    const [currentView, setCurrentView] = useState<ViewState>('dashboard');
-
     // Subscription State
     const [subscription, setSubscription] = useState<UserSubscription | null>(null);
     const [isLoadingSubscription, setIsLoadingSubscription] = useState<boolean>(false);
@@ -337,20 +331,7 @@ const App: React.FC = () => {
                 </div>
             );
         }
-        return isAuthenticated ? (
-            currentView === 'integrations' ? (
-                <IntegrationSelector 
-                    onBack={() => setCurrentView('dashboard')}
-                    onContinue={(platform) => {
-                        console.log('Plataforma selecionada:', platform);
-                        alert(`Integração com ${platform} iniciada! (Funcionalidade em breve)`);
-                        setCurrentView('dashboard');
-                    }}
-                />
-            ) : (
-                <Dashboard />
-            )
-        ) : <LoginScreen />;
+        return isAuthenticated ? <Dashboard /> : <LoginScreen />;
     };
 
     const Dashboard = () => (
@@ -446,7 +427,6 @@ const App: React.FC = () => {
                 isAuthenticated={!!isAuthenticated} 
                 onLogout={handleLogout}
                 subscription={subscription}
-                onNavigateToIntegrations={() => setCurrentView('integrations')}
             />
             <AuthContent />
         </div>
