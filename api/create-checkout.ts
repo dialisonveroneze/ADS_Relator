@@ -11,9 +11,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const origin = `${protocol}://${host}`;
 
-    // MODO SIMULAÇÃO (FALLBACK)
-    // Se não houver Token do Mercado Pago, usa o modo de teste local.
-    if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
+    // Tenta pegar da variável de ambiente, senão usa a chave fornecida diretamente (Fallback)
+    // IMPORTANTE: Em produção definitiva, configure MERCADOPAGO_ACCESS_TOKEN nas variáveis de ambiente da Vercel.
+    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-4fe02070-a79b-43fc-bcf0-78ba0743e6c7';
+
+    // MODO SIMULAÇÃO (FALLBACK FINAL)
+    // Se mesmo assim não tiver token, usa o modo de teste local.
+    if (!accessToken) {
         console.warn("MERCADOPAGO_ACCESS_TOKEN ausente. Usando modo de simulação.");
         return res.status(200).json({ 
             url: `${origin}/api/payment-success?status=approved&mock=true`,
@@ -27,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`
+                'Authorization': `Bearer ${accessToken}`
             },
             body: JSON.stringify({
                 items: [

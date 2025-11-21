@@ -7,6 +7,7 @@ import LineChart from './components/LineChart';
 import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import SubscriptionGate from './components/SubscriptionGate';
+import IntegrationSelector from './components/IntegrationSelector';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
 import { getSubscriptionStatus } from './services/subscriptionService';
 import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption, UserSubscription } from './types';
@@ -29,10 +30,15 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
     { key: 'last_month', label: 'Mês Passado' },
 ];
 
+type ViewState = 'dashboard' | 'integrations';
+
 const App: React.FC = () => {
     // Authentication State
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
     
+    // View State
+    const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+
     // Subscription State
     const [subscription, setSubscription] = useState<UserSubscription | null>(null);
     const [isLoadingSubscription, setIsLoadingSubscription] = useState<boolean>(false);
@@ -258,14 +264,10 @@ const App: React.FC = () => {
 
         setSelectedEntityIds(prev => {
             if (isMultiSelect) {
-                // Se já está selecionado, remove. Se não, adiciona.
                 return prev.includes(entityId) 
                     ? prev.filter(id => id !== entityId) 
                     : [...prev, entityId];
             } else {
-                // Comportamento simples: se clicar no mesmo, desmarca. Se for outro, substitui.
-                // Se tiver vários selecionados e clicar em um deles (sem ctrl), deve selecionar SÓ ele? 
-                // Geralmente sim, comportamento de "reset".
                 return prev.length === 1 && prev[0] === entityId ? [] : [entityId];
             }
         });
@@ -335,7 +337,20 @@ const App: React.FC = () => {
                 </div>
             );
         }
-        return isAuthenticated ? <Dashboard /> : <LoginScreen />;
+        return isAuthenticated ? (
+            currentView === 'integrations' ? (
+                <IntegrationSelector 
+                    onBack={() => setCurrentView('dashboard')}
+                    onContinue={(platform) => {
+                        console.log('Plataforma selecionada:', platform);
+                        alert(`Integração com ${platform} iniciada! (Funcionalidade em breve)`);
+                        setCurrentView('dashboard');
+                    }}
+                />
+            ) : (
+                <Dashboard />
+            )
+        ) : <LoginScreen />;
     };
 
     const Dashboard = () => (
@@ -431,6 +446,7 @@ const App: React.FC = () => {
                 isAuthenticated={!!isAuthenticated} 
                 onLogout={handleLogout}
                 subscription={subscription}
+                onNavigateToIntegrations={() => setCurrentView('integrations')}
             />
             <AuthContent />
         </div>

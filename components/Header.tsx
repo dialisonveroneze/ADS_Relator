@@ -6,9 +6,10 @@ interface HeaderProps {
     isAuthenticated: boolean;
     onLogout: () => void;
     subscription: UserSubscription | null;
+    onNavigateToIntegrations?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ isAuthenticated, onLogout, subscription }) => {
+const Header: React.FC<HeaderProps> = ({ isAuthenticated, onLogout, subscription, onNavigateToIntegrations }) => {
     
     const handleDebugAction = async (action: 'expire' | 'reset') => {
         if (!confirm(action === 'expire' ? 'Isso vai bloquear o acesso simulando um trial vencido. Continuar?' : 'Isso vai resetar tudo como um novo usuário. Continuar?')) return;
@@ -24,7 +25,7 @@ const Header: React.FC<HeaderProps> = ({ isAuthenticated, onLogout, subscription
                     <svg className="w-8 h-8 text-blue-600 dark:text-blue-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    <h1 className="text-xl font-bold text-gray-800 dark:text-white">
+                    <h1 className="text-xl font-bold text-gray-800 dark:text-white cursor-pointer" onClick={() => window.location.href = '/'}>
                         Meta Ads Dashboard
                     </h1>
                     
@@ -41,6 +42,16 @@ const Header: React.FC<HeaderProps> = ({ isAuthenticated, onLogout, subscription
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {isAuthenticated && onNavigateToIntegrations && (
+                        <button 
+                            onClick={onNavigateToIntegrations}
+                            className="text-sm font-medium bg-blue-50 hover:bg-blue-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-blue-700 dark:text-blue-300 py-2 px-4 rounded-lg transition-colors border border-blue-200 dark:border-gray-600 mr-2 flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                            Integrações
+                        </button>
+                    )}
+
                     {/* Botões de Debug para Teste de Pagamento */}
                     {isAuthenticated && (
                         <div className="hidden md:flex items-center gap-2 mr-4 border-r pr-4 border-gray-300 dark:border-gray-600">
