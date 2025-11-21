@@ -184,7 +184,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const objective = item.objective;
                 const actions = item.actions || [];
 
-                // ----------- ALGORITMO WATERFALL DE RESULTADOS (V3.1) -----------
+                // ----------- ALGORITMO WATERFALL DE RESULTADOS (V3.2) -----------
                 let resultsCount = 0;
 
                 // 1. Detecção de Objetivo baseado em NOME + API
@@ -210,7 +210,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 // --- FUNÇÕES DE BUSCA INTELIGENTE ---
                 
-                // Busca o valor máximo de um grupo de chaves (para evitar somar totais com parciais)
                 const getMaxValueByKeywords = (keywords: string[]) => {
                     const matches = actions.filter((a: any) => 
                         keywords.some(k => a.action_type.includes(k))
@@ -232,32 +231,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 } 
                 else if (isTraffic) {
                     // REGRA 2: Tráfego
-                    // Prioriza Conversas/Mensagens se houver (campanha de Whats com objetivo Tráfego).
-                    const messages = getMaxValueByKeywords(['messaging_conversation_started', 'contact', 'whatsapp']);
+                    // 2.1 Procura estritamente CONVERSAS (Whatsapp/Direct/Messenger)
+                    // IMPORTANTE: Removemos 'contact' daqui para evitar que cliques em botões secundários (valor 2)
+                    // escondam as conversas reais (valor 51).
+                    const messages = getMaxValueByKeywords([
+                        'messaging_conversation_started', 
+                        'omni_messaging', 
+                        'whatsapp'
+                    ]);
                     
                     if (messages > 0) {
                         resultsCount = messages;
                     } else {
-                        // Se não tem mensagem, assume que é tráfego para site -> Cliques no Link
+                        // 2.2 Fallback: Cliques no Link
                         resultsCount = inlineLinkClicks > 0 ? inlineLinkClicks : clicks;
                     }
                 } 
                 else {
                     // REGRA 3: Vendas / Engajamento / Leads
-                    // Estratégia "Maior Vence" (Max Win): Compara Purchase vs Messages vs Leads
+                    // Estratégia "Maior Vence" (Max Win):
+                    // Resolve o problema de "120 mensagens vs 2 compras" mostrando 120.
                     
                     const purchases = getExactValue('purchase');
                     const leads = getMaxValueByKeywords(['lead', 'schedule', 'submit_application']);
-                    const messages = getMaxValueByKeywords(['messaging_conversation_started', 'contact', 'whatsapp']);
                     
-                    // Também verificamos 'omni_messaging...' explicitamente caso não tenha sido pego
-                    const omniMessages = getExactValue('omni_messaging_conversation_started');
+                    // Procura abrangente por qualquer sinal de mensagem
+                    const messages = getMaxValueByKeywords([
+                        'messaging_conversation_started', 
+                        'omni_messaging', 
+                        'contact', 
+                        'whatsapp'
+                    ]);
+                    
+                    const omniMessages = getExactValue('omni_messaging_conversation_started_7d');
 
-                    // O resultado é o maior valor encontrado entre as métricas principais.
-                    // Isso corrige casos onde há 2 compras (pixel) mas 120 mensagens (real).
                     resultsCount = Math.max(purchases, leads, messages, omniMessages);
                     
-                    // Fallback se tudo for zero (tenta pegar qualquer ação de conversão)
+                    // Fallback final
                     if (resultsCount === 0) {
                          resultsCount = getMaxValueByKeywords(['conversion']);
                     }

@@ -12,8 +12,8 @@ interface KpiTableProps {
 
 type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date' | 'entityId'>;
 
-// CONFIGURAÇÃO DE CABEÇALHO FORA DO COMPONENTE (ESTÁTICA)
-// ORDEM ESTRITA DAS COLUNAS - NÃO ALTERAR A SEQUÊNCIA
+// CONFIGURAÇÃO DE CABEÇALHO (ESTÁTICA E ESTRITA)
+// A ORDEM DO ARRAY DETERMINA A ORDEM NA TELA
 const HEADERS_CONFIG: { label: string; key: SortableKeys; align?: 'left' | 'right' | 'center'; minWidth: string }[] = [
     { label: "Nome", key: "name", align: 'left', minWidth: 'min-w-[160px] md:min-w-[250px]' },
     { label: "Valor Gasto", key: "amountSpent", align: 'right', minWidth: 'min-w-[110px] md:min-w-[120px]' },
@@ -62,6 +62,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         setVisibleKeys(newSet);
     };
 
+    // Mantém a ordem original do HEADERS_CONFIG, apenas filtrando o que não está visível
     const visibleHeaders = HEADERS_CONFIG.filter(h => visibleKeys.has(h.key));
 
     const formatCurrency = (value: number) => {
@@ -164,16 +165,13 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
          }
     };
 
-    // Função auxiliar para lidar com o clique, verificando se Ctrl está pressionado
     const handleRowClick = (e: React.MouseEvent, entityId: string) => {
         if (onRowClick) {
-            // Detecta Ctrl (Windows) ou Command (Mac)
             const isMultiSelect = e.ctrlKey || e.metaKey;
             onRowClick(entityId, isMultiSelect);
         }
     };
 
-    // Helper para verificar se está selecionado
     const isSelected = (id: string) => selectedEntityIds.includes(id);
 
     return (
@@ -186,7 +184,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                         onClick={() => setShowColumnSelector(!showColumnSelector)}
                         className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                         Colunas
                     </button>
                     
@@ -200,7 +198,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                             checked={visibleKeys.has(h.key)} 
                                             onChange={() => toggleColumn(h.key)}
                                             disabled={h.key === 'name'}
-                                            className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-offset-gray-800"
+                                            className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
                                         />
                                         <span className="ml-2 text-gray-700 dark:text-gray-200">{h.label}</span>
                                     </label>
@@ -215,7 +213,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                 <table className="w-full border-collapse">
                     <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-20 shadow-sm">
                         <tr>
-                            {/* Coluna de Seleção (Checkbox) */}
                             {onRowClick && (
                                 <th className="py-3 px-4 sticky left-0 z-30 bg-gray-50 dark:bg-gray-700 border-r border-gray-200 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)] w-[40px]">
                                     <span className="sr-only">Selecionar</span>
@@ -274,7 +271,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                         }
                                     `}
                                 >
-                                    {/* Célula de Checkbox */}
                                     {onRowClick && (
                                         <td className={`py-3 px-4 sticky left-0 z-10 border-r border-gray-200 dark:border-gray-700 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]
                                             ${isSelected(item.entityId) ? 'bg-blue-50 dark:bg-gray-800' : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700/50'}
@@ -282,7 +278,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                             <input 
                                                 type="checkbox" 
                                                 checked={isSelected(item.entityId)} 
-                                                onChange={() => {}} // Controlado pelo onClick da TR
+                                                onChange={() => {}}
                                                 className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
                                             />
                                         </td>
