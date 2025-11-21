@@ -184,7 +184,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const objective = item.objective;
                 const actions = item.actions || [];
 
-                // ----------- ALGORITMO WATERFALL DE RESULTADOS (V3.0) -----------
+                // ----------- ALGORITMO WATERFALL DE RESULTADOS (V3.1) -----------
                 let resultsCount = 0;
 
                 // 1. Detecção de Objetivo baseado em NOME + API
@@ -210,41 +210,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
                 // --- FUNÇÕES DE BUSCA INTELIGENTE ---
                 
+                // Busca o valor máximo de um grupo de chaves (para evitar somar totais com parciais)
+                const getMaxValueByKeywords = (keywords: string[]) => {
+                    const matches = actions.filter((a: any) => 
+                        keywords.some(k => a.action_type.includes(k))
+                    );
+                    if (matches.length === 0) return 0;
+                    return Math.max(...matches.map((a: any) => parseFloat(a.value)));
+                };
+
                 const getExactValue = (key: string) => {
                     const match = actions.find((a: any) => a.action_type === key);
                     return match ? parseFloat(match.value) : 0;
                 };
-
-                const getBestMessagingCount = () => {
-                    // Tenta pegar o Omnichannel primeiro (Geralmente é a métrica principal de 'Resultados')
-                    const omni = actions.find((a: any) => a.action_type === 'omni_messaging_conversation_started');
-                    if (omni) return parseFloat(omni.value);
-
-                    // Se não, procura por onsite_conversion ou messaging_conversation_started
-                    // E tenta somar as atribuições granulares (ex: 7d + 1d view)
-                    const granular = actions.filter((a: any) => 
-                        (a.action_type.includes('onsite_conversion.messaging_conversation_started') || 
-                         a.action_type.includes('messaging_conversation_started_7d')) &&
-                        !a.action_type.includes('omni') // Evita duplicar com omni se ele existisse mas fosse 0
-                    );
-                    
-                    if (granular.length > 0) {
-                         return granular.reduce((acc: number, curr: any) => acc + parseFloat(curr.value), 0);
-                    }
-
-                    // Último caso: qualquer coisa com whatsapp ou messaging
-                    const broad = actions.filter((a: any) => 
-                         a.action_type.includes('messaging_conversation_started') ||
-                         a.action_type === 'click_to_whatsapp'
-                    );
-                    
-                    if (broad.length > 0) {
-                        return Math.max(...broad.map((a: any) => parseFloat(a.value)));
-                    }
-
-                    return 0;
-                };
-
 
                 // --- APLICAÇÃO DA LÓGICA ---
 
@@ -254,32 +232,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 } 
                 else if (isTraffic) {
                     // REGRA 2: Tráfego
-                    // Prioriza Conversas REAIS. Ignora Leads/Contatos (ruído).
-                    // Se não tiver conversa, cai para Cliques no Link.
-                    const msgs = getBestMessagingCount();
-                    if (msgs > 0) {
-                        resultsCount = msgs;
+                    // Prioriza Conversas/Mensagens se houver (campanha de Whats com objetivo Tráfego).
+                    const messages = getMaxValueByKeywords(['messaging_conversation_started', 'contact', 'whatsapp']);
+                    
+                    if (messages > 0) {
+                        resultsCount = messages;
                     } else {
+                        // Se não tem mensagem, assume que é tráfego para site -> Cliques no Link
                         resultsCount = inlineLinkClicks > 0 ? inlineLinkClicks : clicks;
                     }
                 } 
                 else {
                     // REGRA 3: Vendas / Engajamento / Leads
-                    // Aqui temos o conflito: Campanha de Venda que gera Mensagem (Carros) vs E-commerce
+                    // Estratégia "Maior Vence" (Max Win): Compara Purchase vs Messages vs Leads
                     
                     const purchases = getExactValue('purchase');
-                    const leads = getExactValue('leads') || getExactValue('lead') || getExactValue('schedule');
-                    const messages = getBestMessagingCount();
-
-                    // Lógica de Predominância: Quem tiver o maior volume vence.
-                    // Ex: 120 Mensagens vs 2 Compras -> Mensagens vence.
-                    // Ex: 50 Compras vs 0 Mensagens -> Compras vence.
-                    resultsCount = Math.max(purchases, messages, leads);
+                    const leads = getMaxValueByKeywords(['lead', 'schedule', 'submit_application']);
+                    const messages = getMaxValueByKeywords(['messaging_conversation_started', 'contact', 'whatsapp']);
                     
-                    // Fallback final se tudo for 0
+                    // Também verificamos 'omni_messaging...' explicitamente caso não tenha sido pego
+                    const omniMessages = getExactValue('omni_messaging_conversation_started');
+
+                    // O resultado é o maior valor encontrado entre as métricas principais.
+                    // Isso corrige casos onde há 2 compras (pixel) mas 120 mensagens (real).
+                    resultsCount = Math.max(purchases, leads, messages, omniMessages);
+                    
+                    // Fallback se tudo for zero (tenta pegar qualquer ação de conversão)
                     if (resultsCount === 0) {
-                         // Tenta encontrar métricas de cadastro ou contato se nada acima existiu
-                         resultsCount = getExactValue('onsite_conversion.lead_grouped') || 0;
+                         resultsCount = getMaxValueByKeywords(['conversion']);
                     }
                 }
 
