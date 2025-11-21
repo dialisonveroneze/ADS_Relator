@@ -23,7 +23,10 @@ const SubscriptionGate: React.FC<SubscriptionGateProps> = ({ subscription, isLoa
             const data = await response.json();
             
             if (data.url) {
-                // Redireciona para o Mercado Pago
+                if (data.isMock) {
+                    alert("⚠️ MODO SIMULAÇÃO ATIVADO\n\nVocê não configurou a variável 'MERCADOPAGO_ACCESS_TOKEN' na Vercel, então o sistema simulou um pagamento aprovado.\n\nPara ver o checkout real, adicione seu token do Mercado Pago nas configurações do projeto.");
+                }
+                // Redireciona para o Mercado Pago (ou url de mock)
                 window.location.href = data.url;
             } else {
                 alert('Erro ao iniciar pagamento: ' + (data.message || 'Erro desconhecido'));

@@ -16,7 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
         console.warn("MERCADOPAGO_ACCESS_TOKEN ausente. Usando modo de simulação.");
         return res.status(200).json({ 
-            url: `${origin}/api/payment-success?status=approved&mock=true` 
+            url: `${origin}/api/payment-success?status=approved&mock=true`,
+            isMock: true
         });
     }
 
@@ -57,8 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Retorna o link do checkout (init_point para produção, sandbox_init_point para testes)
-        // Usamos init_point padrão, o ambiente depende do Token usado.
-        return res.status(200).json({ url: mpData.init_point });
+        return res.status(200).json({ url: mpData.init_point, isMock: false });
 
     } catch (error: any) {
         console.error("Erro no Checkout:", error);
