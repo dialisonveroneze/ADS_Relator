@@ -11,14 +11,14 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ isAuthenticated, onLogout, subscription }) => {
     
     // SUBSTITUA PELO SEU NÚMERO DE WHATSAPP REAL (DD + NÚMERO)
-    const WHATSAPP_NUMBER = '5544991162288'; 
+    const WHATSAPP_NUMBER = '5544988021015'; 
     const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=Ol%C3%A1,%20preciso%20de%20ajuda%20com%20o%20ADS%20Relator.`;
 
     const handleDebugAction = async (action: 'expire' | 'reset') => {
         if (!confirm(action === 'expire' ? 'Isso vai bloquear o acesso simulando um trial vencido. Continuar?' : 'Isso vai resetar tudo como um novo usuário. Continuar?')) return;
         
         await fetch(`/api/debug-subscription?action=${action}`);
-        window.location.reload();
+        window.location.href = '/';
     };
 
     return (
