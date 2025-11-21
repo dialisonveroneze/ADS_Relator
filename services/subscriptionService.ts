@@ -14,12 +14,4 @@ export const getSubscriptionStatus = async (): Promise<UserSubscription> => {
     return handleApiResponse(response);
 };
 
-export const performCheckout = async (method: 'credit_card' | 'pix', details: any): Promise<void> => {
-    // In a real app, you would send 'details' to your backend to create a Stripe Session or Pix Code
-    const response = await fetch('/api/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method, details })
-    });
-    return handleApiResponse(response);
-};
+// A função performCheckout foi removida pois a lógica agora é direta via Link do Stripe gerado no backend.

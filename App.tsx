@@ -50,8 +50,8 @@ const App: React.FC = () => {
     const [isLoadingAccounts, setIsLoadingAccounts] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     
-    // New State for Drill-down
-    const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+    // New State for Multi-Select Drill-down
+    const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
 
     const checkSubscription = useCallback(async () => {
         setIsLoadingSubscription(true);
@@ -112,7 +112,7 @@ const App: React.FC = () => {
         setIsLoadingKpis(true);
         setError(null);
         // Reset selection when fetching new data
-        setSelectedEntityId(null);
+        setSelectedEntityIds([]);
         try {
             const data = await getKpiData(selectedAccount.id, selectedLevel, dateRange);
             setKpiData(data);
@@ -135,9 +135,9 @@ const App: React.FC = () => {
         // For charts, we ONLY want daily breakdowns, not the period summaries
         let dailyData = kpiData.filter(d => !d.isPeriodTotal);
 
-        // Filter by selected entity if one is clicked in the table
-        if (selectedEntityId) {
-            dailyData = dailyData.filter(d => d.entityId === selectedEntityId);
+        // Filter by selected entities if any are clicked in the table
+        if (selectedEntityIds.length > 0) {
+            dailyData = dailyData.filter(d => selectedEntityIds.includes(d.entityId));
         }
 
         if (selectedLevel === DataLevel.ACCOUNT) {
@@ -184,7 +184,7 @@ const App: React.FC = () => {
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
-    }, [kpiData, selectedLevel, selectedEntityId]);
+    }, [kpiData, selectedLevel, selectedEntityIds]);
     
     const tableData = useMemo(() => {
         if (kpiData.length === 0) return [];
@@ -250,19 +250,34 @@ const App: React.FC = () => {
         setSelectedLevel(DataLevel.ACCOUNT);
         setDateRange('last_14_days');
         setKpiData([]); 
-        setSelectedEntityId(null);
+        setSelectedEntityIds([]);
     };
 
-    const handleRowClick = (entityId: string) => {
+    const handleRowClick = (entityId: string, isMultiSelect: boolean) => {
         if (selectedLevel === DataLevel.ACCOUNT) return;
-        setSelectedEntityId(prev => prev === entityId ? null : entityId);
+
+        setSelectedEntityIds(prev => {
+            if (isMultiSelect) {
+                // Se já está selecionado, remove. Se não, adiciona.
+                return prev.includes(entityId) 
+                    ? prev.filter(id => id !== entityId) 
+                    : [...prev, entityId];
+            } else {
+                // Comportamento simples: se clicar no mesmo, desmarca. Se for outro, substitui.
+                // Se tiver vários selecionados e clicar em um deles (sem ctrl), deve selecionar SÓ ele? 
+                // Geralmente sim, comportamento de "reset".
+                return prev.length === 1 && prev[0] === entityId ? [] : [entityId];
+            }
+        });
     };
 
     const getChartLabel = () => {
         const baseLabel = chartMetrics[chartMetric].label;
-        if (selectedEntityId) {
-            const entity = kpiData.find(d => d.entityId === selectedEntityId);
+        if (selectedEntityIds.length === 1) {
+            const entity = kpiData.find(d => d.entityId === selectedEntityIds[0]);
             return entity ? `${baseLabel} - ${entity.name}` : baseLabel;
+        } else if (selectedEntityIds.length > 1) {
+            return `${baseLabel} - ${selectedEntityIds.length} itens selecionados`;
         }
         return baseLabel;
     };
@@ -274,7 +289,7 @@ const App: React.FC = () => {
                 {(Object.values(DataLevel)).map(level => (
                     <button
                         key={level} 
-                        onClick={() => { setSelectedLevel(level); setSelectedEntityId(null); }} 
+                        onClick={() => { setSelectedLevel(level); setSelectedEntityIds([]); }} 
                         disabled={disabled}
                         className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors duration-200 ${selectedLevel === level ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
                     >{DATA_LEVEL_LABELS[level]}</button>
@@ -401,7 +416,7 @@ const App: React.FC = () => {
                             data={tableData} 
                             isLoading={isLoadingKpis} 
                             currency={selectedAccount.currency}
-                            selectedEntityId={selectedEntityId}
+                            selectedEntityIds={selectedEntityIds}
                             onRowClick={handleRowClick}
                         />
                     </div>

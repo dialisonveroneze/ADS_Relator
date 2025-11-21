@@ -6,12 +6,13 @@ interface KpiTableProps {
     data: KpiData[];
     isLoading: boolean;
     currency: string;
-    selectedEntityId?: string | null;
-    onRowClick?: (entityId: string) => void;
+    selectedEntityIds?: string[];
+    onRowClick?: (entityId: string, isMultiSelect: boolean) => void;
 }
 
 type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date' | 'entityId'>;
 
+// CONFIGURAÇÃO DE CABEÇALHO FORA DO COMPONENTE (ESTÁTICA)
 // ORDEM ESTRITA DAS COLUNAS - NÃO ALTERAR A SEQUÊNCIA
 const HEADERS_CONFIG: { label: string; key: SortableKeys; align?: 'left' | 'right' | 'center'; minWidth: string }[] = [
     { label: "Nome", key: "name", align: 'left', minWidth: 'min-w-[160px] md:min-w-[250px]' },
@@ -28,7 +29,7 @@ const HEADERS_CONFIG: { label: string; key: SortableKeys; align?: 'left' | 'righ
     { label: "CPC (Link)", key: "costPerInlineLinkClick", align: 'right', minWidth: 'min-w-[100px] md:min-w-[120px]' },
 ];
 
-const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selectedEntityId, onRowClick }) => {
+const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selectedEntityIds = [], onRowClick }) => {
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({
         key: 'amountSpent',
         direction: 'descending'
@@ -64,7 +65,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
     const visibleHeaders = HEADERS_CONFIG.filter(h => visibleKeys.has(h.key));
 
     const formatCurrency = (value: number) => {
-        // Se o valor for muito pequeno (ex: custo por alcance 0.001), mostra 4 casas.
         if (value > 0 && value < 0.01) {
             return new Intl.NumberFormat('pt-BR', { 
                 style: 'currency', 
@@ -164,23 +164,17 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
          }
     };
 
-    const getCellClass = (key: SortableKeys, isSticky: boolean = false) => {
-        let base = "py-3 px-4 whitespace-nowrap text-sm transition-colors duration-200 ";
-        
-        if (key === 'name') {
-            base += "font-medium text-gray-900 dark:text-white text-left ";
-        } else if (key === 'results') {
-            base += "font-semibold text-blue-600 dark:text-blue-400 text-right ";
-        } else {
-            base += "text-gray-600 dark:text-gray-300 text-right ";
+    // Função auxiliar para lidar com o clique, verificando se Ctrl está pressionado
+    const handleRowClick = (e: React.MouseEvent, entityId: string) => {
+        if (onRowClick) {
+            // Detecta Ctrl (Windows) ou Command (Mac)
+            const isMultiSelect = e.ctrlKey || e.metaKey;
+            onRowClick(entityId, isMultiSelect);
         }
-
-        if (isSticky) {
-            base += "sticky left-0 z-10 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)] ";
-        }
-
-        return base;
     };
+
+    // Helper para verificar se está selecionado
+    const isSelected = (id: string) => selectedEntityIds.includes(id);
 
     return (
         <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-lg mt-6 flex flex-col h-full">
@@ -221,6 +215,13 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                 <table className="w-full border-collapse">
                     <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-20 shadow-sm">
                         <tr>
+                            {/* Coluna de Seleção (Checkbox) */}
+                            {onRowClick && (
+                                <th className="py-3 px-4 sticky left-0 z-30 bg-gray-50 dark:bg-gray-700 border-r border-gray-200 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)] w-[40px]">
+                                    <span className="sr-only">Selecionar</span>
+                                </th>
+                            )}
+
                             {visibleHeaders.map((header, index) => (
                                 <th 
                                     key={header.key} 
@@ -228,7 +229,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                                     className={`
                                         py-3 px-4 text-xs font-bold text-gray-700 dark:text-gray-200 tracking-wider cursor-pointer select-none 
                                         hover:bg-gray-100 dark:hover:bg-gray-600 whitespace-nowrap ${header.minWidth}
-                                        ${index === 0 ? 'sticky left-0 z-30 bg-gray-50 dark:bg-gray-700 border-r border-gray-200 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}
+                                        ${index === 0 && !onRowClick ? 'sticky left-0 z-30 bg-gray-50 dark:bg-gray-700 border-r border-gray-200 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}
                                     `}
                                     style={{ textAlign: header.align || 'left' }}
                                     onClick={() => requestSort(header.key)}
@@ -245,8 +246,9 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                         {isLoading ? (
                             Array.from({ length: 5 }).map((_, idx) => (
                                 <tr key={idx} className="animate-pulse bg-white dark:bg-gray-800">
+                                    {onRowClick && <td className="p-4 sticky left-0 bg-white dark:bg-gray-800"><div className="h-4 w-4 bg-gray-200 dark:bg-gray-700 rounded"></div></td>}
                                     {visibleHeaders.map((h, i) => (
-                                        <td key={h.key} className={`p-4 ${i === 0 ? 'sticky left-0 bg-white dark:bg-gray-800' : ''}`}>
+                                        <td key={h.key} className={`p-4 ${i === 0 && !onRowClick ? 'sticky left-0 bg-white dark:bg-gray-800' : ''}`}>
                                             <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
                                         </td>
                                     ))}
@@ -254,7 +256,7 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                             ))
                         ) : sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={visibleHeaders.length} className="text-center py-12 text-gray-500 dark:text-gray-400">
+                                <td colSpan={visibleHeaders.length + (onRowClick ? 1 : 0)} className="text-center py-12 text-gray-500 dark:text-gray-400">
                                     Nenhum dado encontrado para o período selecionado.
                                 </td>
                             </tr>
@@ -262,20 +264,42 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                             sortedData.map((item) => (
                                 <tr 
                                     key={item.id} 
-                                    onClick={() => onRowClick && onRowClick(item.entityId)}
+                                    onClick={(e) => handleRowClick(e, item.entityId)}
                                     className={`
                                         transition-colors duration-150 group
                                         ${onRowClick ? 'cursor-pointer' : ''}
-                                        ${selectedEntityId === item.entityId 
+                                        ${isSelected(item.entityId) 
                                             ? 'bg-blue-50 dark:bg-blue-900/30' 
                                             : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
                                         }
                                     `}
                                 >
+                                    {/* Célula de Checkbox */}
+                                    {onRowClick && (
+                                        <td className={`py-3 px-4 sticky left-0 z-10 border-r border-gray-200 dark:border-gray-700 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]
+                                            ${isSelected(item.entityId) ? 'bg-blue-50 dark:bg-gray-800' : 'bg-white dark:bg-gray-800 group-hover:bg-gray-50 dark:group-hover:bg-gray-700/50'}
+                                        `}>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isSelected(item.entityId)} 
+                                                onChange={() => {}} // Controlado pelo onClick da TR
+                                                className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                                            />
+                                        </td>
+                                    )}
+
                                     {visibleHeaders.map((header, index) => (
                                         <td 
                                             key={header.key} 
-                                            className={`${getCellClass(header.key, index === 0)} ${selectedEntityId === item.entityId && index === 0 ? '!bg-blue-50 dark:!bg-gray-800' : ''}`}
+                                            className={`
+                                                py-3 px-4 whitespace-nowrap text-sm transition-colors duration-200
+                                                ${header.key === 'name' ? "font-medium text-gray-900 dark:text-white text-left" : 
+                                                  header.key === 'results' ? "font-semibold text-blue-600 dark:text-blue-400 text-right" : 
+                                                  "text-gray-600 dark:text-gray-300 text-right"}
+                                                
+                                                ${index === 0 && !onRowClick ? 'sticky left-0 z-10 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}
+                                                ${isSelected(item.entityId) && index === 0 && !onRowClick ? '!bg-blue-50 dark:!bg-gray-800' : ''}
+                                            `}
                                         >
                                             {renderCell(item, header.key)}
                                         </td>
@@ -287,11 +311,14 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
                     {!isLoading && totals && (
                         <tfoot className="bg-gray-100 dark:bg-gray-900 font-bold text-gray-900 dark:text-white sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                             <tr>
+                                {onRowClick && (
+                                    <td className="sticky left-0 z-30 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]"></td>
+                                )}
                                 {visibleHeaders.map((header, index) => (
                                     <td 
                                         key={header.key} 
                                         className={`py-4 px-4 whitespace-nowrap border-t-2 border-gray-300 dark:border-gray-600 ${header.align === 'right' ? 'text-right' : 'text-left'}
-                                            ${index === 0 ? 'sticky left-0 z-30 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}
+                                            ${index === 0 && !onRowClick ? 'sticky left-0 z-30 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-600 shadow-[4px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}
                                         `}
                                     >
                                         {header.key === 'name' ? 'Total Geral' : renderCell(totals, header.key)}
