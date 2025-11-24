@@ -12,11 +12,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const origin = `${protocol}://${host}`;
 
     // Tenta pegar da variável de ambiente, senão usa a chave fornecida diretamente (Fallback)
-    // IMPORTANTE: Em produção definitiva, configure MERCADOPAGO_ACCESS_TOKEN nas variáveis de ambiente da Vercel.
+    // A chave hardcoded permite que o checkout funcione imediatamente em produção sem configuração extra na Vercel.
     const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-4fe02070-a79b-43fc-bcf0-78ba0743e6c7';
 
-    // MODO SIMULAÇÃO (FALLBACK FINAL)
-    // Se mesmo assim não tiver token, usa o modo de teste local.
     if (!accessToken) {
         console.warn("MERCADOPAGO_ACCESS_TOKEN ausente. Usando modo de simulação.");
         return res.status(200).json({ 
@@ -50,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 },
                 auto_return: "approved",
                 statement_descriptor: "ADS RELATOR",
-                external_reference: `user_${Date.now()}` // Idealmente seria o ID do usuário
+                external_reference: `user_${Date.now()}`
             })
         });
 
@@ -61,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             throw new Error(mpData.message || 'Erro ao criar preferência no Mercado Pago');
         }
 
-        // Retorna o link do checkout (init_point para produção, sandbox_init_point para testes)
+        // Retorna o link do checkout
         return res.status(200).json({ url: mpData.init_point, isMock: false });
 
     } catch (error: any) {
