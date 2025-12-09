@@ -10,7 +10,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ isAuthenticated, onLogout, subscription }) => {
     
-    // SUBSTITUA PELO SEU NÚMERO DE WHATSAPP REAL (DD + NÚMERO)
+    // Número do WhatsApp para suporte
     const WHATSAPP_NUMBER = '5544988021015'; 
     const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=Ol%C3%A1,%20preciso%20de%20ajuda%20com%20o%20ADS%20Relator.`;
 
