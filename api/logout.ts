@@ -1,17 +1,21 @@
-// api/logout.ts
+
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import cookie from 'cookie';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
-    // Para fazer logout, instruímos o navegador a "expirar" o cookie.
-    // Definimos maxAge como -1, o que faz com que o navegador o exclua imediatamente.
-    res.setHeader('Set-Cookie', cookie.serialize('meta_token', '', {
+    const expireOptions = {
         httpOnly: true,
         secure: process.env.NODE_ENV !== 'development',
-        maxAge: -1, // Expira o cookie
+        maxAge: -1, // Expire immediately
         path: '/',
-        sameSite: 'lax',
-    }));
+        sameSite: 'lax' as const,
+    };
+
+    res.setHeader('Set-Cookie', [
+        cookie.serialize('meta_token', '', expireOptions),
+        cookie.serialize('google_access_token', '', expireOptions),
+        cookie.serialize('google_refresh_token', '', expireOptions)
+    ]);
 
     res.status(200).json({ message: 'Logout realizado com sucesso.' });
 }

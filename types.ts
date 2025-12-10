@@ -6,6 +6,7 @@ export interface AdAccount {
   spendingLimit: number;
   amountSpent: number;
   currency: string;
+  provider: 'meta' | 'google';
 }
 
 export interface KpiData {
@@ -39,7 +40,7 @@ export enum DataLevel {
 export const DATA_LEVEL_LABELS: Record<DataLevel, string> = {
   [DataLevel.ACCOUNT]: 'Conta',
   [DataLevel.CAMPAIGN]: 'Campanha',
-  [DataLevel.AD_SET]: 'Grupo de Anúncios',
+  [DataLevel.AD_SET]: 'Conjunto/Grupo',
   [DataLevel.AD]: 'Anúncio',
 };
 

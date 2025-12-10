@@ -8,6 +8,7 @@ import KpiTable from './components/KpiTable';
 import LoginScreen from './components/LoginScreen';
 import SubscriptionGate from './components/SubscriptionGate';
 import { getAdAccounts, getKpiData, logout } from './services/metaAdsService';
+import { getGoogleAdAccounts, getGoogleKpiData } from './services/googleAdsService';
 import { getSubscriptionStatus } from './services/subscriptionService';
 import { AdAccount, KpiData, DataLevel, DATA_LEVEL_LABELS, DateRangeOption, UserSubscription } from './types';
 
@@ -31,8 +32,15 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
 
 const App: React.FC = () => {
     // Authentication State
-    const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // null means "checking"
+    const [authStatus, setAuthStatus] = useState<{ meta: boolean; google: boolean; checked: boolean }>({
+        meta: false,
+        google: false,
+        checked: false
+    });
     
+    // Platform State
+    const [selectedPlatform, setSelectedPlatform] = useState<'meta' | 'google'>('meta');
+
     // Subscription State
     const [subscription, setSubscription] = useState<UserSubscription | null>(null);
     const [isLoadingSubscription, setIsLoadingSubscription] = useState<boolean>(false);
@@ -65,88 +73,112 @@ const App: React.FC = () => {
         }
     }, []);
 
-    const handleAuthenticationError = useCallback(() => {
-        setIsAuthenticated(false);
+    const fetchAccounts = useCallback(async (platform: 'meta' | 'google') => {
+        setIsLoadingAccounts(true);
+        setError(null);
         setAdAccounts([]);
         setSelectedAccount(null);
-        setKpiData([]);
+        
+        try {
+            let accounts: AdAccount[] = [];
+            if (platform === 'meta') {
+                accounts = await getAdAccounts();
+            } else {
+                try {
+                    accounts = await getGoogleAdAccounts();
+                } catch (e) {
+                    console.warn("Google API error or not connected", e);
+                    // Don't clear auth status here, just return empty
+                }
+            }
+
+            // Tag accounts with provider just in case API didn't
+            const taggedAccounts = accounts.map(acc => ({ ...acc, provider: platform }));
+            
+            setAdAccounts(taggedAccounts);
+            if (taggedAccounts.length > 0) {
+                setSelectedAccount(taggedAccounts[0]);
+            }
+            
+            setAuthStatus(prev => ({ ...prev, [platform]: true }));
+
+        } catch (err: any) {
+            if (err.message === 'Unauthorized') {
+                setAuthStatus(prev => ({ ...prev, [platform]: false }));
+            } else {
+                setError(`Falha ao carregar contas ${platform === 'meta' ? 'Meta' : 'Google'}.`);
+            }
+        } finally {
+            setIsLoadingAccounts(false);
+        }
     }, []);
 
-    // Check authentication status on initial load
+    // Initial Auth Check
     useEffect(() => {
-        const checkAuthStatus = async () => {
-            setIsLoadingAccounts(true);
-            setError(null);
+        const checkAuth = async () => {
+            // Try to fetch Meta accounts to verify session
             try {
-                const accounts = await getAdAccounts();
-                setAdAccounts(accounts);
-                if (accounts.length > 0) {
-                    setSelectedAccount(accounts[0]);
-                }
-                setIsAuthenticated(true);
-                // Check subscription after auth is confirmed
+                await fetchAccounts('meta');
+                setAuthStatus(prev => ({ ...prev, checked: true }));
                 checkSubscription();
-            } catch (err: any) {
-                if (err.message === 'Unauthorized') {
-                    handleAuthenticationError();
-                } else {
-                    setError("Falha ao verificar o status da autenticação.");
-                    setIsAuthenticated(false);
-                }
-            } finally {
-                setIsLoadingAccounts(false);
+            } catch (e) {
+                setAuthStatus(prev => ({ ...prev, checked: true }));
             }
         };
-        checkAuthStatus();
-    }, [handleAuthenticationError, checkSubscription]);
+        checkAuth();
+    }, [fetchAccounts, checkSubscription]);
+
+    // Handle Tab Switch
+    const handlePlatformSwitch = (platform: 'meta' | 'google') => {
+        setSelectedPlatform(platform);
+        fetchAccounts(platform);
+        setKpiData([]);
+        setSelectedEntityIds([]);
+        setDateRange('last_14_days');
+    };
     
     const handleLogout = async () => {
         await logout();
-        handleAuthenticationError();
-        // Adiciona um parâmetro para evitar cache e forçar a verificação no servidor
+        setAuthStatus({ meta: false, google: false, checked: true });
         window.location.href = `/?logged_out=true`;
     };
 
     const fetchKpiData = useCallback(async () => {
-        if (!selectedAccount || !isAuthenticated) return;
+        if (!selectedAccount) return;
         setIsLoadingKpis(true);
         setError(null);
-        // Reset selection when fetching new data
         setSelectedEntityIds([]);
         try {
-            const data = await getKpiData(selectedAccount.id, selectedLevel, dateRange);
+            let data: KpiData[] = [];
+            if (selectedPlatform === 'meta') {
+                data = await getKpiData(selectedAccount.id, selectedLevel, dateRange);
+            } else {
+                data = await getGoogleKpiData(selectedAccount.id, selectedLevel, dateRange);
+            }
             setKpiData(data);
         } catch (err: any) {
-            if (err.message === 'Unauthorized') {
-                handleAuthenticationError();
-            } else {
-                setError("Falha ao buscar os dados de KPI.");
-            }
+             setError("Falha ao buscar os dados de KPI.");
         } finally {
             setIsLoadingKpis(false);
         }
-    }, [selectedAccount, selectedLevel, dateRange, isAuthenticated, handleAuthenticationError]);
+    }, [selectedAccount, selectedLevel, dateRange, selectedPlatform]);
 
     useEffect(() => {
         fetchKpiData();
     }, [fetchKpiData]);
     
+    // Aggregation Logic (Shared between Meta and Google)
     const aggregatedChartData = useMemo(() => {
-        // For charts, we ONLY want daily breakdowns, not the period summaries
         let dailyData = kpiData.filter(d => !d.isPeriodTotal);
 
-        // Filter by selected entities if any are clicked in the table
         if (selectedEntityIds.length > 0) {
             dailyData = dailyData.filter(d => selectedEntityIds.includes(d.entityId));
         }
 
         if (selectedLevel === DataLevel.ACCOUNT) {
-            // Account level already comes sorted by date from API logic usually, but sort to be safe
             return dailyData.sort((a, b) => a.date.localeCompare(b.date));
         }
         
-        // For levels like Campaign/AdSet, dailyData has multiple rows per day (one per entity).
-        // We must aggregate them by date to show the TOTAL trend line on the chart.
         const dailyTotals: { [date: string]: KpiData } = {};
         dailyData.forEach(item => {
             if (!dailyTotals[item.date]) {
@@ -164,23 +196,14 @@ const App: React.FC = () => {
             totals.clicks += item.clicks;
             totals.inlineLinkClicks += item.inlineLinkClicks;
             totals.results += item.results;
-            // Maintain one objective for inference if mixed (last wins)
-            totals.objective = item.objective;
         });
 
-        // Recalculate rates for chart
         Object.values(dailyTotals).forEach(totals => {
             totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
-            
-            // Check if this aggregate looks like Awareness/Reach (based on objective or if results == reach)
-            const isAwareness = totals.objective === 'OUTCOME_AWARENESS' || totals.objective === 'REACH' || (totals.results > 0 && totals.results === totals.reach);
-
-            totals.costPerResult = totals.results > 0 
-                ? (totals.amountSpent / totals.results) * (isAwareness ? 1000 : 1) 
-                : 0;
+            totals.costPerResult = totals.results > 0 ? (totals.amountSpent / totals.results) : 0;
         });
         
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
@@ -196,29 +219,21 @@ const App: React.FC = () => {
         }
         
         const summaryData = kpiData.filter(d => d.isPeriodTotal);
-        
-        if (summaryData.length > 0) {
-            return summaryData;
-        }
+        if (summaryData.length > 0) return summaryData;
 
-        // Fallback aggregation if summary data is missing
+        // Fallback aggregation
         const aggregated: { [id: string]: KpiData } = {};
         kpiData.forEach(item => {
             if (item.isPeriodTotal) return; 
-            
             if (!aggregated[item.entityId]) {
                 aggregated[item.entityId] = {
-                    id: item.entityId,
-                    entityId: item.entityId,
-                    name: item.name,
-                    level: item.level,
+                    ...item,
                     date: '', 
                     amountSpent: 0, impressions: 0, cpm: 0,
                     reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0,
-                    results: 0, costPerResult: 0, objective: item.objective
+                    results: 0, costPerResult: 0
                 };
             }
-            
             const totals = aggregated[item.entityId];
             totals.amountSpent += item.amountSpent;
             totals.impressions += item.impressions;
@@ -228,20 +243,14 @@ const App: React.FC = () => {
             totals.results += item.results;
         });
     
-        Object.values(aggregated).forEach(totals => {
+        return Object.values(aggregated).map(totals => {
             totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
             totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
-            
-             const isAwareness = totals.objective === 'OUTCOME_AWARENESS' || totals.objective === 'REACH' || (totals.results > 0 && totals.results === totals.reach);
-
-            totals.costPerResult = totals.results > 0 
-                ? (totals.amountSpent / totals.results) * (isAwareness ? 1000 : 1) 
-                : 0;
+            totals.costPerResult = totals.results > 0 ? (totals.amountSpent / totals.results) : 0;
+            return totals;
         });
-    
-        return Object.values(aggregated);
     }, [kpiData, selectedLevel]);
 
 
@@ -258,9 +267,7 @@ const App: React.FC = () => {
 
         setSelectedEntityIds(prev => {
             if (isMultiSelect) {
-                return prev.includes(entityId) 
-                    ? prev.filter(id => id !== entityId) 
-                    : [...prev, entityId];
+                return prev.includes(entityId) ? prev.filter(id => id !== entityId) : [...prev, entityId];
             } else {
                 return prev.length === 1 && prev[0] === entityId ? [] : [entityId];
             }
@@ -323,15 +330,21 @@ const App: React.FC = () => {
     );
 
     const AuthContent = () => {
-        if (isAuthenticated === null) {
+        if (!authStatus.checked) {
             return (
                 <div className="flex flex-col items-center justify-center text-center p-8 min-h-[calc(100vh-80px)]">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                    <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Verificando sessão...</p>
+                    <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Carregando...</p>
                 </div>
             );
         }
-        return isAuthenticated ? <Dashboard /> : <LoginScreen />;
+        
+        // Show login screen if neither is authenticated
+        if (!authStatus.meta && !authStatus.google) {
+            return <LoginScreen />;
+        }
+        
+        return <Dashboard />;
     };
 
     const Dashboard = () => (
@@ -342,24 +355,35 @@ const App: React.FC = () => {
                 onSubscriptionUpdate={checkSubscription}
              >
                 <>
+                    {/* Platform Switcher */}
+                    <div className="flex justify-center mb-6">
+                         <div className="bg-white dark:bg-gray-800 p-1 rounded-xl shadow-md inline-flex">
+                             <button
+                                onClick={() => handlePlatformSwitch('meta')}
+                                className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${selectedPlatform === 'meta' ? 'bg-blue-600 text-white shadow' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                             >
+                                 Meta Ads
+                             </button>
+                             <button
+                                onClick={() => handlePlatformSwitch('google')}
+                                className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${selectedPlatform === 'google' ? 'bg-green-600 text-white shadow' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                             >
+                                 Google Ads
+                             </button>
+                         </div>
+                    </div>
+
                     {error && (<div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative" role="alert"><strong className="font-bold">Ocorreu um erro: </strong><span className="block sm:inline">{error}</span></div>)}
                     
-                    <div className="flex justify-end">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+                            {selectedPlatform === 'meta' ? 'Contas do Facebook/Instagram' : 'Contas do Google Ads'}
+                        </h2>
                         <button
                             onClick={() => setShowBalanceList(!showBalanceList)}
                             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 rounded-lg shadow-sm border border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:border-gray-700 transition-colors"
                         >
-                            {showBalanceList ? (
-                                <>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
-                                    Ocultar Saldos
-                                </>
-                            ) : (
-                                <>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
-                                    Mostrar Saldos
-                                </>
-                            )}
+                            {showBalanceList ? 'Ocultar Lista' : 'Mostrar Lista'}
                         </button>
                     </div>
 
@@ -380,23 +404,11 @@ const App: React.FC = () => {
                                 
                                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                                     <MetricSelector disabled={isLoadingKpis || !showChart} />
-                                    
                                     <button
                                         onClick={() => setShowChart(!showChart)}
                                         className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 transition-colors whitespace-nowrap self-end md:self-auto"
-                                        title={showChart ? "Ocultar Gráfico" : "Mostrar Gráfico"}
                                     >
-                                        {showChart ? (
-                                            <>
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
-                                                Ocultar Gráfico
-                                            </>
-                                        ) : (
-                                            <>
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                                                Mostrar Gráfico
-                                            </>
-                                        )}
+                                        {showChart ? "Ocultar Gráfico" : "Mostrar Gráfico"}
                                     </button>
                                 </div>
                             </div>
@@ -417,7 +429,7 @@ const App: React.FC = () => {
                                 onRowClick={handleRowClick}
                             />
                         </div>
-                    ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta de anúncio foi encontrada para este usuário.</p></div>))}
+                    ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta encontrada. Verifique se você conectou a plataforma corretamente.</p></div>))}
                 </>
             </SubscriptionGate>
         </main>
@@ -426,7 +438,7 @@ const App: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
             <Header 
-                isAuthenticated={!!isAuthenticated} 
+                isAuthenticated={authStatus.meta || authStatus.google} 
                 onLogout={handleLogout}
                 subscription={subscription}
             />
