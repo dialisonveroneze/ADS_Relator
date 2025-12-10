@@ -88,11 +88,11 @@ const App: React.FC = () => {
                     accounts = await getGoogleAdAccounts();
                 } catch (e) {
                     console.warn("Google API error or not connected", e);
-                    // Don't clear auth status here, just return empty
+                    // Don't error out, just allow empty for now if not connected
                 }
             }
 
-            // Tag accounts with provider just in case API didn't
+            // Tag accounts with provider
             const taggedAccounts = accounts.map(acc => ({ ...acc, provider: platform }));
             
             setAdAccounts(taggedAccounts);
@@ -100,6 +100,7 @@ const App: React.FC = () => {
                 setSelectedAccount(taggedAccounts[0]);
             }
             
+            // Assume if fetch works or returns empty array without throw, auth is OK for that platform
             setAuthStatus(prev => ({ ...prev, [platform]: true }));
 
         } catch (err: any) {
@@ -116,11 +117,19 @@ const App: React.FC = () => {
     // Initial Auth Check
     useEffect(() => {
         const checkAuth = async () => {
-            // Try to fetch Meta accounts to verify session
+            // Check both sequentially to update auth status
             try {
+                // We check Meta first as default
                 await fetchAccounts('meta');
-                setAuthStatus(prev => ({ ...prev, checked: true }));
-                checkSubscription();
+                
+                // Then try to check Google status silently
+                try {
+                    await getGoogleAdAccounts();
+                    setAuthStatus(prev => ({ ...prev, google: true, checked: true }));
+                } catch (e) {
+                    // Google not connected is fine
+                    setAuthStatus(prev => ({ ...prev, google: false, checked: true }));
+                }
             } catch (e) {
                 setAuthStatus(prev => ({ ...prev, checked: true }));
             }
@@ -429,7 +438,11 @@ const App: React.FC = () => {
                                 onRowClick={handleRowClick}
                             />
                         </div>
-                    ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">Nenhuma conta encontrada. Verifique se você conectou a plataforma corretamente.</p></div>))}
+                    ) : (adAccounts.length === 0 && !error && (<div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg"><p className="text-gray-500 dark:text-gray-400">
+                        {selectedPlatform === 'google' 
+                            ? 'Nenhuma conta encontrada. Certifique-se de que fez login com o Google e que suas contas estão vinculadas ao email usado.' 
+                            : 'Nenhuma conta encontrada. Verifique se você conectou a plataforma corretamente.'}
+                    </p></div>))}
                 </>
             </SubscriptionGate>
         </main>
