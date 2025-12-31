@@ -48,7 +48,7 @@ const SubscriptionGate: React.FC<SubscriptionGateProps> = ({ subscription, isLoa
     }
 
     // Se ativo ou em trial, mostra o app
-    if (subscription && (subscription.status === 'active' || subscription.status === 'trial_active')) {
+    if (subscription && ( 1===1 ||subscription.status === 'active' || subscription.status === 'trial_active')) {
         return (
             <>
                 {subscription.status === 'trial_active' && (
