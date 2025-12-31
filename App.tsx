@@ -89,7 +89,6 @@ const App: React.FC = () => {
             const taggedAccounts = accounts.map(acc => ({ ...acc, provider: platform }));
             setAdAccounts(taggedAccounts);
             
-            // Auto-select all by default if needed, or just the first
             if (taggedAccounts.length > 0) {
                 setSelectedAccountIds([taggedAccounts[0].id]);
             }
@@ -97,10 +96,12 @@ const App: React.FC = () => {
             setAuthStatus(prev => ({ ...prev, [platform]: true }));
 
         } catch (err: any) {
+            console.error(`Error fetching ${platform} accounts:`, err);
             if (err.message === 'Unauthorized') {
                 setAuthStatus(prev => ({ ...prev, [platform]: false }));
             } else {
-                setError(`Falha ao carregar contas ${platform === 'meta' ? 'Meta' : 'Google'}.`);
+                // Mostra o erro real que veio da API
+                setError(err.message || `Erro ao carregar contas do ${platform === 'meta' ? 'Meta' : 'Google'}.`);
             }
         } finally {
             setIsLoadingAccounts(false);
@@ -111,21 +112,27 @@ const App: React.FC = () => {
         const checkAuth = async () => {
             await checkSubscription();
             try {
-                await fetchAccounts('meta');
+                // Tenta inicializar com a plataforma selecionada por padrão
+                await fetchAccounts(selectedPlatform);
+                
+                // Verifica silenciamente a outra plataforma para o status do Header
+                const otherPlatform = selectedPlatform === 'meta' ? 'google' : 'meta';
                 try {
-                    await getGoogleAdAccounts();
-                    setAuthStatus(prev => ({ ...prev, google: true, checked: true }));
+                    if (otherPlatform === 'meta') await getAdAccounts();
+                    else await getGoogleAdAccounts();
+                    setAuthStatus(prev => ({ ...prev, [otherPlatform]: true, checked: true }));
                 } catch (e) {
-                    setAuthStatus(prev => ({ ...prev, google: false, checked: true }));
+                    setAuthStatus(prev => ({ ...prev, [otherPlatform]: false, checked: true }));
                 }
             } catch (e) {
                 setAuthStatus(prev => ({ ...prev, checked: true }));
             }
         };
         checkAuth();
-    }, [fetchAccounts, checkSubscription]);
+    }, [selectedPlatform, fetchAccounts, checkSubscription]);
 
     const handlePlatformSwitch = (platform: 'meta' | 'google') => {
+        setError(null);
         setSelectedPlatform(platform);
         setKpiData([]);
         setSelectedAccountIds([]);
@@ -146,8 +153,6 @@ const App: React.FC = () => {
         setSelectedEntityIds([]);
         try {
             let allKpis: KpiData[] = [];
-            
-            // Busca dados de todas as contas selecionadas
             const fetchPromises = selectedAccountIds.map(async (id) => {
                 if (selectedPlatform === 'meta') {
                     return getKpiData(id, selectedLevel, dateRange);
@@ -163,17 +168,18 @@ const App: React.FC = () => {
 
             setKpiData(allKpis);
         } catch (err: any) {
-             setError("Falha ao buscar os dados de KPI consolidado.");
+             setError(err.message || "Falha ao buscar os dados de performance.");
         } finally {
             setIsLoadingKpis(false);
         }
     }, [selectedAccountIds, selectedLevel, dateRange, selectedPlatform]);
 
     useEffect(() => {
-        fetchKpiData();
-    }, [fetchKpiData]);
+        if (selectedAccountIds.length > 0) {
+            fetchKpiData();
+        }
+    }, [fetchKpiData, selectedAccountIds]);
 
-    // Conta Consolidada para o BalanceCard
     const consolidatedAccount = useMemo(() => {
         if (selectedAccountIds.length === 0) return null;
         const selected = adAccounts.filter(acc => selectedAccountIds.includes(acc.id));
@@ -185,7 +191,7 @@ const App: React.FC = () => {
             balance: acc.balance + curr.balance,
             amountSpent: acc.amountSpent + curr.amountSpent,
             spendingLimit: acc.spendingLimit + curr.spendingLimit,
-            currency: curr.currency // Assume a mesma moeda
+            currency: curr.currency
         }), { id: 'summary', name: 'Resumo', balance: 0, amountSpent: 0, spendingLimit: 0, currency: 'BRL', provider: selectedPlatform });
     }, [selectedAccountIds, adAccounts, selectedPlatform]);
     
@@ -226,16 +232,11 @@ const App: React.FC = () => {
     
     const tableData = useMemo(() => {
         if (kpiData.length === 0) return [];
-        
         if (selectedLevel === DataLevel.ACCOUNT) {
-            // Se nível é conta, mostramos o histórico diário consolidado das contas selecionadas
             return aggregatedChartData.map(d => ({ ...d, name: new Date(d.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }));
         }
-
-        // Para outros níveis, agrupamos por ID da entidade (Campanha, Grupo, etc)
         const summaryData = kpiData.filter(d => d.isPeriodTotal);
         const sourceData = summaryData.length > 0 ? summaryData : kpiData.filter(d => !d.isPeriodTotal);
-
         const aggregated: { [id: string]: KpiData } = {};
         sourceData.forEach(item => {
             if (!aggregated[item.entityId]) {
@@ -249,7 +250,6 @@ const App: React.FC = () => {
             totals.inlineLinkClicks += item.inlineLinkClicks;
             totals.results += item.results;
         });
-
         return Object.values(aggregated).map(totals => {
             totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
@@ -306,16 +306,34 @@ const App: React.FC = () => {
                             </div>
                         </div>
 
-                        {error && (<div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-r-lg mb-4 flex items-center gap-3"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg><span>{error}</span></div>)}
+                        {error && (
+                            <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-r-lg mb-6 flex items-start gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+                                <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                <div>
+                                    <p className="font-bold">Atenção</p>
+                                    <p className="text-sm opacity-90">{error}</p>
+                                </div>
+                            </div>
+                        )}
                         
                         {!isPlatformAuthenticated ? (
-                            <div className="text-center bg-white dark:bg-gray-800 p-12 rounded-[2rem] shadow-2xl max-w-2xl mx-auto">
+                            <div className="text-center bg-white dark:bg-gray-800 p-12 rounded-[2rem] shadow-2xl max-w-2xl mx-auto border border-gray-100 dark:border-gray-700">
+                                <div className={`w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center ${selectedPlatform === 'google' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                                    {selectedPlatform === 'google' ? (
+                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M12.545 11.027L21.114 11.027C21.303 11.254 21.397 11.536 21.397 11.872C21.397 12.345 21.272 12.854 21.022 13.4C20.454 14.654 19.563 15.727 18.35 16.618C16.85 17.727 15.093 18.282 13.08 18.282C11.127 18.282 9.408 17.818 7.923 16.891C6.438 15.964 5.253 14.673 4.367 13.018C3.481 11.363 3.038 9.545 3.038 7.563C3.038 5.581 3.481 3.763 4.367 2.108C5.253 0.453 6.438 -0.838 7.923 -1.765C9.408 -2.692 11.127 -3.156 13.08 -3.156C15.227 -3.156 17.154 -2.547 18.861 -1.329L16.03 1.503C15.193 1.011 14.211 0.765 13.08 0.765C11.536 0.765 10.199 1.182 9.07 2.016C7.94 2.85 7.14 3.991 6.67 5.441C6.2 6.89 5.965 8.441 5.965 10.091C5.965 11.741 6.2 13.291 6.67 14.741C7.14 16.19 7.94 17.332 9.07 18.165C10.199 18.999 11.536 19.416 13.08 19.416C14.172 19.416 15.143 19.227 15.996 18.85C16.85 18.473 17.513 17.973 17.983 17.35C18.453 16.727 18.773 16.045 18.943 15.304L13.08 15.304L13.08 11.027L12.545 11.027Z"/></svg>
+                                    ) : (
+                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                    )}
+                                </div>
                                 <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-4">Conectar {selectedPlatform === 'google' ? 'Google Ads' : 'Meta Ads'}</h3>
+                                <p className="text-gray-500 mb-8 max-w-sm mx-auto text-sm leading-relaxed">Conecte sua conta para começar a monitorar o saldo e a performance de suas campanhas em tempo real.</p>
                                 <a
                                     href={selectedPlatform === 'google' ? `https://accounts.google.com/o/oauth2/v2/auth?client_id=880633493696-3m5f7ks5rk534tomks1fmihir6qqph3a.apps.googleusercontent.com&redirect_uri=${encodeURIComponent(window.location.origin + '/api/auth/google-callback')}&response_type=code&scope=https://www.googleapis.com/auth/adwords&access_type=offline&prompt=consent` : `https://www.facebook.com/v19.0/dialog/oauth?client_id=897058925982042&redirect_uri=${encodeURIComponent(window.location.origin + '/api/auth')}&scope=ads_read`}
-                                    className={`inline-flex items-center justify-center gap-3 text-white font-black py-4 px-10 rounded-2xl transition-all shadow-xl w-full max-w-xs ${selectedPlatform === 'google' ? 'bg-green-600 hover:bg-green-700 shadow-green-100' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100'}`}
+                                    className={`inline-flex items-center justify-center gap-3 text-white font-black py-4 px-10 rounded-2xl transition-all shadow-xl w-full max-w-xs transform hover:-translate-y-1 ${selectedPlatform === 'google' ? 'bg-green-600 hover:bg-green-700 shadow-green-100 dark:shadow-none' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100 dark:shadow-none'}`}
                                 >
-                                    Conectar {selectedPlatform === 'google' ? 'Google Ads' : 'Meta Ads'}
+                                    Fazer Login Agora
                                 </a>
                             </div>
                         ) : (
@@ -425,7 +443,6 @@ const App: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
             <Header isAuthenticated={authStatus.meta || authStatus.google} onLogout={handleLogout} subscription={subscription} />
-            {/* Fix: Replaced undefined AuthContent component with conditional rendering logic for LoginScreen or Dashboard */}
             {!authStatus.checked ? (
                 <div className="flex items-center justify-center min-h-[calc(100vh-80px)]">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>

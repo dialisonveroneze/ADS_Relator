@@ -23,13 +23,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     if (!developerToken) {
          return res.status(500).json({ 
-             message: 'Variável GOOGLE_DEVELOPER_TOKEN não configurada na Vercel.' 
+             message: 'O GOOGLE_DEVELOPER_TOKEN não foi configurado na Vercel. Obtenha-o no painel do Google Ads > Ferramentas > Centro de API.' 
          });
     }
 
     try {
-        // Busca a lista de clientes que o token tem acesso direto
-        const listResponse = await fetch('https://googleads.googleapis.com/v14/customers:listAccessibleCustomers', {
+        // 1. Busca IDs de clientes acessíveis
+        // Google Ads API v18 é a estável atual
+        const listResponse = await fetch('https://googleads.googleapis.com/v18/customers:listAccessibleCustomers', {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'developer-token': developerToken,
@@ -39,19 +40,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const listData = await listResponse.json();
         
         if (listData.error) {
-             return res.status(listResponse.status).json({ 
-                 message: listData.error.message || 'Erro ao buscar contas acessíveis.' 
+             const msg = listData.error.message || 'Erro ao listar clientes do Google.';
+             const status = listResponse.status === 403 ? 403 : 500;
+             return res.status(status).json({ 
+                 message: listResponse.status === 403 
+                    ? `Acesso negado. Verifique se o seu Developer Token foi aprovado ou se tem as permissões corretas. Detalhe: ${msg}` 
+                    : msg 
              });
         }
 
         const resourceNames = listData.resourceNames || [];
+        if (resourceNames.length === 0) {
+            return res.status(200).json([]);
+        }
+
         const accounts: AdAccount[] = [];
 
-        // Para cada conta de "entrada", buscamos se ela é um MCC e pegamos os filhos (subcontas)
+        // 2. Busca detalhes de cada conta. 
+        // Se houver muitas contas, fazemos um fetch mais inteligente.
         const fetchSubAccounts = async (resourceName: string) => {
             const customerId = resourceName.split('/')[1];
             
-            // Esta query busca tanto a conta em si quanto as subcontas se for um manager
+            // Query para pegar contas que não são administradoras (contas de entrega)
             const query = `
                 SELECT 
                     customer_client.id, 
@@ -61,11 +71,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     customer_client.status
                 FROM customer_client
                 WHERE customer_client.status = 'ENABLED' 
-                AND customer_client.manager = false
+                AND customer_client.level <= 1
             `;
 
             try {
-                const searchResponse = await fetch(`https://googleads.googleapis.com/v14/customers/${customerId}/googleAds:search`, {
+                const searchResponse = await fetch(`https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:search`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
@@ -80,34 +90,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 if (searchData.results) {
                     searchData.results.forEach((row: any) => {
                         const client = row.customerClient;
-                        accounts.push({
-                            id: client.id,
-                            name: client.descriptiveName || `Conta ${client.id}`,
-                            balance: 0,
-                            spendingLimit: 0,
-                            amountSpent: 0,
-                            currency: client.currencyCode,
-                            provider: 'google'
-                        });
+                        // Adiciona apenas se não for manager (para focar em contas de anúncios)
+                        // ou se o usuário quiser ver a estrutura completa, mas aqui focamos em performance
+                        if (!client.manager) {
+                            accounts.push({
+                                id: client.id,
+                                name: client.descriptiveName || `Conta ${client.id}`,
+                                balance: 0,
+                                spendingLimit: 0,
+                                amountSpent: 0,
+                                currency: client.currencyCode,
+                                provider: 'google'
+                            });
+                        }
                     });
                 } else if (searchData.error) {
-                    console.error(`Erro na conta ${customerId}:`, searchData.error);
+                    console.warn(`Erro parcial ao buscar detalhes do cliente ${customerId}:`, searchData.error.message);
                 }
             } catch (e) {
-                console.error(`Erro de rede ao processar conta ${customerId}`);
+                console.error(`Falha de rede ao consultar cliente ${customerId}`);
             }
         };
 
-        // Processa todas as contas raiz em paralelo para agilizar
-        await Promise.all(resourceNames.map((rn: string) => fetchSubAccounts(rn)));
+        // Limita a concorrência para evitar problemas de timeout na Vercel (limite de 10s em planos hobby)
+        // Processamos os primeiros 5 recursos raiz (geralmente é apenas 1 ou 2 MCCs)
+        await Promise.all(resourceNames.slice(0, 10).map((rn: string) => fetchSubAccounts(rn)));
 
-        // Remove duplicatas (caso uma conta apareça em múltiplos caminhos)
+        // Se após varrer os managers não achamos nada, tentamos adicionar a conta raiz diretamente
+        if (accounts.length === 0) {
+            for (const rn of resourceNames) {
+                const id = rn.split('/')[1];
+                accounts.push({
+                    id: id,
+                    name: `Conta ${id}`,
+                    balance: 0,
+                    spendingLimit: 0,
+                    amountSpent: 0,
+                    currency: 'BRL',
+                    provider: 'google'
+                });
+            }
+        }
+
+        // Remove duplicatas
         const uniqueAccounts = Array.from(new Map(accounts.map(item => [item.id, item])).values());
 
         res.status(200).json(uniqueAccounts);
 
-    } catch (error) {
-        console.error("Google Accounts API Error:", error);
-        res.status(500).json({ message: 'Erro ao listar contas do Google Ads.' });
+    } catch (error: any) {
+        console.error("Critical Google Accounts API Error:", error);
+        res.status(500).json({ message: error.message || 'Erro interno ao processar contas do Google Ads.' });
     }
 }
