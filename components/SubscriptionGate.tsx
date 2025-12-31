@@ -9,6 +9,13 @@ interface SubscriptionGateProps {
     children: React.ReactNode;
 }
 
+/**
+ * FLAG DE DESENVOLVIMENTO: 
+ * Mude para 'true' para ignorar o bloqueio de assinatura e acessar o app livremente,
+ * independente do status retornado pela API.
+ */
+const BYPASS_SUBSCRIPTION = true;
+
 const SubscriptionGate: React.FC<SubscriptionGateProps> = ({ subscription, isLoading, onSubscriptionUpdate, children }) => {
     const [isProcessing, setIsProcessing] = useState(false);
 
@@ -47,11 +54,13 @@ const SubscriptionGate: React.FC<SubscriptionGateProps> = ({ subscription, isLoa
         );
     }
 
-    // Se ativo ou em trial, mostra o app
-    if (subscription && ( 1===1 ||subscription.status === 'active' || subscription.status === 'trial_active')) {
+    // Se BYPASS_SUBSCRIPTION for true, ou se o status for ativo ou em trial, permite o acesso.
+    const hasAccess = BYPASS_SUBSCRIPTION || (subscription && (subscription.status === 'active' || subscription.status === 'trial_active'));
+
+    if (hasAccess) {
         return (
             <>
-                {subscription.status === 'trial_active' && (
+                {subscription?.status === 'trial_active' && !BYPASS_SUBSCRIPTION && (
                     <div className="bg-blue-600 text-white text-sm py-2 px-4 text-center flex justify-center items-center flex-wrap gap-2">
                         <span>Você tem <strong>{subscription.daysRemaining} dias</strong> restantes no seu teste gratuito.</span>
                         <button 

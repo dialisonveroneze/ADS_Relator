@@ -20,6 +20,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { accountId, level, dateRange } = req.query;
     
+    // Fix: Validate and ensure accountId and level are present and are strings to avoid TypeScript errors on fetch calls
+    if (!accountId || typeof accountId !== 'string' || !level || typeof level !== 'string') {
+        return res.status(400).json({ message: 'ID da conta e nível são obrigatórios.' });
+    }
+    
     // Date Logic
     const today = new Date();
     const formatDate = (date: Date) => date.toISOString().split('T')[0];
@@ -95,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             let name = '';
 
             if (level === DataLevel.ACCOUNT) {
-                id = accountId as string;
+                id = accountId;
                 name = 'Conta Google';
             } else if (level === DataLevel.CAMPAIGN) {
                 id = row.campaign.id;
