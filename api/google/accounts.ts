@@ -9,6 +9,7 @@ export interface AdAccount {
   spendingLimit: number;
   amountSpent: number;
   currency: string;
+  provider: 'google';
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -17,44 +18,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const developerToken = process.env.GOOGLE_DEVELOPER_TOKEN;
 
     if (!accessToken) {
-        return res.status(401).json({ message: 'Sessão expirada. Por favor, conecte-se ao Google novamente.' });
+        return res.status(401).json({ message: 'Conecte-se ao Google Ads novamente.' });
     }
     
     if (!developerToken) {
-         console.error("ERRO: GOOGLE_DEVELOPER_TOKEN não configurado.");
-         return res.status(500).json({ message: 'Configuração do servidor incompleta: Falta o Developer Token do Google Ads.' });
+         return res.status(500).json({ 
+             message: 'Falta o GOOGLE_DEVELOPER_TOKEN na Vercel. Obtenha-o no painel do Google Ads > Ferramentas > Centro de API.' 
+         });
     }
 
     try {
-        const listCustResponse = await fetch('https://googleads.googleapis.com/v14/customers:listAccessibleCustomers', {
+        const response = await fetch('https://googleads.googleapis.com/v14/customers:listAccessibleCustomers', {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'developer-token': developerToken,
             }
         });
         
-        const listData = await listCustResponse.json();
+        const data = await response.json();
         
-        if (listData.error) {
-             console.error("Google List Error:", listData.error);
-             return res.status(listCustResponse.status).json({ message: listData.error.message || 'Erro na API do Google.' });
+        if (data.error) {
+             return res.status(response.status).json({ 
+                 message: data.error.message || 'Erro na API do Google Ads. Verifique se o Developer Token está aprovado.' 
+             });
         }
 
-        const resourceNames = listData.resourceNames || [];
+        const resourceNames = data.resourceNames || [];
         const accounts: AdAccount[] = [];
 
-        for (const resourceName of resourceNames.slice(0, 10)) {
+        for (const resourceName of resourceNames.slice(0, 15)) {
             const customerId = resourceName.split('/')[1];
             
-            const query = `
-                SELECT 
-                    customer.id, 
-                    customer.descriptive_name, 
-                    customer.currency_code 
-                FROM customer 
-                LIMIT 1
-            `;
-
             const queryResponse = await fetch(`https://googleads.googleapis.com/v14/customers/${customerId}/googleAds:search`, {
                 method: 'POST',
                 headers: {
@@ -62,28 +56,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     'developer-token': developerToken,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ query })
+                body: JSON.stringify({ 
+                    query: "SELECT customer.id, customer.descriptive_name, customer.currency_code FROM customer LIMIT 1" 
+                })
             });
             
             const queryData = await queryResponse.json();
             
             if (queryData.results && queryData.results.length > 0) {
-                const info = queryData.results[0].customer;
+                const c = queryData.results[0].customer;
                 accounts.push({
-                    id: info.id,
-                    name: info.descriptiveName || `Conta ${info.id}`,
+                    id: c.id,
+                    name: c.descriptiveName || `Conta ${c.id}`,
                     balance: 0,
-                    spendingLimit: 0, 
+                    spendingLimit: 0,
                     amountSpent: 0,
-                    currency: info.currencyCode
+                    currency: c.currencyCode,
+                    provider: 'google'
                 });
             }
         }
 
         res.status(200).json(accounts);
 
-    } catch (error: any) {
-        console.error("Erro Fatal Google API:", error);
-        res.status(500).json({ message: 'Erro interno ao processar contas do Google Ads.' });
+    } catch (error) {
+        console.error("Google API Error:", error);
+        res.status(500).json({ message: 'Erro ao processar contas do Google Ads.' });
     }
 }
