@@ -30,9 +30,6 @@ const dateRangeOptions: { key: DateRangeOption; label: string }[] = [
     { key: 'last_month', label: 'Mês Passado' },
 ];
 
-const GOOGLE_CLIENT_ID = '880633493696-3m5f7ks5rk534tomks1fmihir6qqph3a.apps.googleusercontent.com';
-const META_APP_ID = '897058925982042';
-
 const App: React.FC = () => {
     // Authentication State
     const [authStatus, setAuthStatus] = useState<{ meta: boolean; google: boolean; checked: boolean }>({
@@ -50,7 +47,7 @@ const App: React.FC = () => {
 
     // Dashboard State
     const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
-    const [selectedAccount, setSelectedAccount] = useState<AdAccount | null>(null);
+    const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
     const [kpiData, setKpiData] = useState<KpiData[]>([]);
     const [selectedLevel, setSelectedLevel] = useState<DataLevel>(DataLevel.ACCOUNT);
     const [dateRange, setDateRange] = useState<DateRangeOption>('last_14_days');
@@ -79,26 +76,22 @@ const App: React.FC = () => {
         setIsLoadingAccounts(true);
         setError(null);
         setAdAccounts([]);
-        setSelectedAccount(null);
+        setSelectedAccountIds([]);
         
         try {
             let accounts: AdAccount[] = [];
             if (platform === 'meta') {
                 accounts = await getAdAccounts();
             } else {
-                try {
-                    accounts = await getGoogleAdAccounts();
-                } catch (e) {
-                    setAuthStatus(prev => ({ ...prev, google: false }));
-                    throw e;
-                }
+                accounts = await getGoogleAdAccounts();
             }
 
             const taggedAccounts = accounts.map(acc => ({ ...acc, provider: platform }));
-            
             setAdAccounts(taggedAccounts);
+            
+            // Auto-select all by default if needed, or just the first
             if (taggedAccounts.length > 0) {
-                setSelectedAccount(taggedAccounts[0]);
+                setSelectedAccountIds([taggedAccounts[0].id]);
             }
             
             setAuthStatus(prev => ({ ...prev, [platform]: true }));
@@ -118,10 +111,7 @@ const App: React.FC = () => {
         const checkAuth = async () => {
             await checkSubscription();
             try {
-                // Try to load initial Meta accounts (default)
                 await fetchAccounts('meta');
-                
-                // Silent check for Google auth status
                 try {
                     await getGoogleAdAccounts();
                     setAuthStatus(prev => ({ ...prev, google: true, checked: true }));
@@ -138,8 +128,8 @@ const App: React.FC = () => {
     const handlePlatformSwitch = (platform: 'meta' | 'google') => {
         setSelectedPlatform(platform);
         setKpiData([]);
+        setSelectedAccountIds([]);
         setSelectedEntityIds([]);
-        setDateRange('last_14_days');
         fetchAccounts(platform);
     };
     
@@ -150,44 +140,68 @@ const App: React.FC = () => {
     };
 
     const fetchKpiData = useCallback(async () => {
-        if (!selectedAccount) return;
+        if (selectedAccountIds.length === 0) return;
         setIsLoadingKpis(true);
         setError(null);
         setSelectedEntityIds([]);
         try {
-            let data: KpiData[] = [];
-            if (selectedPlatform === 'meta') {
-                data = await getKpiData(selectedAccount.id, selectedLevel, dateRange);
-            } else {
-                data = await getGoogleKpiData(selectedAccount.id, selectedLevel, dateRange);
-            }
-            setKpiData(data);
+            let allKpis: KpiData[] = [];
+            
+            // Busca dados de todas as contas selecionadas
+            const fetchPromises = selectedAccountIds.map(async (id) => {
+                if (selectedPlatform === 'meta') {
+                    return getKpiData(id, selectedLevel, dateRange);
+                } else {
+                    return getGoogleKpiData(id, selectedLevel, dateRange);
+                }
+            });
+
+            const results = await Promise.all(fetchPromises);
+            results.forEach(data => {
+                allKpis = [...allKpis, ...data];
+            });
+
+            setKpiData(allKpis);
         } catch (err: any) {
-             setError("Falha ao buscar os dados de KPI.");
+             setError("Falha ao buscar os dados de KPI consolidado.");
         } finally {
             setIsLoadingKpis(false);
         }
-    }, [selectedAccount, selectedLevel, dateRange, selectedPlatform]);
+    }, [selectedAccountIds, selectedLevel, dateRange, selectedPlatform]);
 
     useEffect(() => {
         fetchKpiData();
     }, [fetchKpiData]);
+
+    // Conta Consolidada para o BalanceCard
+    const consolidatedAccount = useMemo(() => {
+        if (selectedAccountIds.length === 0) return null;
+        const selected = adAccounts.filter(acc => selectedAccountIds.includes(acc.id));
+        if (selected.length === 1) return selected[0];
+
+        return selected.reduce((acc, curr) => ({
+            ...acc,
+            name: 'Resumo Consolidado',
+            balance: acc.balance + curr.balance,
+            amountSpent: acc.amountSpent + curr.amountSpent,
+            spendingLimit: acc.spendingLimit + curr.spendingLimit,
+            currency: curr.currency // Assume a mesma moeda
+        }), { id: 'summary', name: 'Resumo', balance: 0, amountSpent: 0, spendingLimit: 0, currency: 'BRL', provider: selectedPlatform });
+    }, [selectedAccountIds, adAccounts, selectedPlatform]);
     
     const aggregatedChartData = useMemo(() => {
         let dailyData = kpiData.filter(d => !d.isPeriodTotal);
         if (selectedEntityIds.length > 0) {
             dailyData = dailyData.filter(d => selectedEntityIds.includes(d.entityId));
         }
-        if (selectedLevel === DataLevel.ACCOUNT) {
-            return dailyData.sort((a, b) => a.date.localeCompare(b.date));
-        }
+        
         const dailyTotals: { [date: string]: KpiData } = {};
         dailyData.forEach(item => {
             if (!dailyTotals[item.date]) {
                 dailyTotals[item.date] = {
-                    id: item.date, entityId: item.date, name: `Resumo - ${item.date}`, level: selectedLevel, date: item.date,
+                    id: item.date, entityId: item.date, name: `Total - ${item.date}`, level: selectedLevel, date: item.date,
                     amountSpent: 0, impressions: 0, cpm: 0, reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0,
-                    results: 0, costPerResult: 0, objective: item.objective 
+                    results: 0, costPerResult: 0
                 };
             }
             const totals = dailyTotals[item.date];
@@ -198,28 +212,34 @@ const App: React.FC = () => {
             totals.inlineLinkClicks += item.inlineLinkClicks;
             totals.results += item.results;
         });
-        Object.values(dailyTotals).forEach(totals => {
-            totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
-            totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-            totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
-            totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
-            totals.costPerResult = totals.results > 0 ? (totals.amountSpent / totals.results) : 0;
-        });
-        return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
+        
+        return Object.values(dailyTotals)
+            .map(totals => {
+                totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
+                totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+                totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
+                totals.costPerResult = totals.results > 0 ? (totals.amountSpent / totals.results) : 0;
+                return totals;
+            })
+            .sort((a, b) => a.date.localeCompare(b.date));
     }, [kpiData, selectedLevel, selectedEntityIds]);
     
     const tableData = useMemo(() => {
         if (kpiData.length === 0) return [];
+        
         if (selectedLevel === DataLevel.ACCOUNT) {
-            return kpiData.filter(d => !d.isPeriodTotal).map(d => ({ ...d, name: new Date(d.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }));
+            // Se nível é conta, mostramos o histórico diário consolidado das contas selecionadas
+            return aggregatedChartData.map(d => ({ ...d, name: new Date(d.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) }));
         }
+
+        // Para outros níveis, agrupamos por ID da entidade (Campanha, Grupo, etc)
         const summaryData = kpiData.filter(d => d.isPeriodTotal);
-        if (summaryData.length > 0) return summaryData;
+        const sourceData = summaryData.length > 0 ? summaryData : kpiData.filter(d => !d.isPeriodTotal);
+
         const aggregated: { [id: string]: KpiData } = {};
-        kpiData.forEach(item => {
-            if (item.isPeriodTotal) return; 
+        sourceData.forEach(item => {
             if (!aggregated[item.entityId]) {
-                aggregated[item.entityId] = { ...item, date: '', amountSpent: 0, impressions: 0, cpm: 0, reach: 0, clicks: 0, inlineLinkClicks: 0, ctr: 0, cpc: 0, costPerInlineLinkClick: 0, results: 0, costPerResult: 0 };
+                aggregated[item.entityId] = { ...item, amountSpent: 0, impressions: 0, reach: 0, clicks: 0, inlineLinkClicks: 0, results: 0 };
             }
             const totals = aggregated[item.entityId];
             totals.amountSpent += item.amountSpent;
@@ -229,19 +249,24 @@ const App: React.FC = () => {
             totals.inlineLinkClicks += item.inlineLinkClicks;
             totals.results += item.results;
         });
+
         return Object.values(aggregated).map(totals => {
             totals.cpm = totals.impressions > 0 ? (totals.amountSpent / totals.impressions) * 1000 : 0;
             totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
             totals.cpc = totals.clicks > 0 ? totals.amountSpent / totals.clicks : 0;
-            totals.costPerInlineLinkClick = totals.inlineLinkClicks > 0 ? totals.amountSpent / totals.inlineLinkClicks : 0;
             totals.costPerResult = totals.results > 0 ? (totals.amountSpent / totals.results) : 0;
             return totals;
         });
-    }, [kpiData, selectedLevel]);
+    }, [kpiData, selectedLevel, aggregatedChartData]);
 
-    const handleAccountSelect = (account: AdAccount) => {
-        setSelectedAccount(account);
-        setSelectedLevel(DataLevel.ACCOUNT);
+    const handleAccountSelect = (account: AdAccount | null, isAll?: boolean) => {
+        if (isAll) {
+            const allIds = adAccounts.map(a => a.id);
+            const isCurrentlyAll = selectedAccountIds.length === adAccounts.length;
+            setSelectedAccountIds(isCurrentlyAll ? [adAccounts[0]?.id] : allIds);
+        } else if (account) {
+            setSelectedAccountIds([account.id]);
+        }
         setKpiData([]); 
         setSelectedEntityIds([]);
     };
@@ -257,32 +282,6 @@ const App: React.FC = () => {
         });
     };
 
-    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    const PRODUCTION_DOMAIN = 'https://dashboard.mindfulmarketing.com.br';
-    const ROOT_URL = isLocalhost ? window.location.origin : PRODUCTION_DOMAIN;
-
-    const metaRedirectUri = `${ROOT_URL}/api/auth`;
-    const metaAuthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(metaRedirectUri)}&scope=ads_read`;
-
-    const googleRedirectUri = `${ROOT_URL}/api/auth/google-callback`;
-    const googleScope = 'https://www.googleapis.com/auth/adwords';
-    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(googleRedirectUri)}&response_type=code&scope=${encodeURIComponent(googleScope)}&access_type=offline&prompt=consent`;
-
-    const AuthContent = () => {
-        if (!authStatus.checked) {
-            return (
-                <div className="flex flex-col items-center justify-center text-center p-8 min-h-[calc(100vh-80px)]">
-                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                    <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Autenticando...</p>
-                </div>
-            );
-        }
-        if (!authStatus.meta && !authStatus.google) {
-            return <LoginScreen />;
-        }
-        return <Dashboard />;
-    };
-
     const Dashboard = () => {
         const isPlatformAuthenticated = selectedPlatform === 'meta' ? authStatus.meta : authStatus.google;
 
@@ -290,7 +289,6 @@ const App: React.FC = () => {
             <main className="container mx-auto p-4 md:p-6 space-y-8">
                 <SubscriptionGate subscription={subscription} isLoading={isLoadingSubscription} onSubscriptionUpdate={checkSubscription}>
                     <>
-                        {/* Platform Switcher */}
                         <div className="flex justify-center mb-6">
                             <div className="bg-white dark:bg-gray-800 p-1.5 rounded-2xl shadow-xl inline-flex border border-gray-100 dark:border-gray-700">
                                 <button
@@ -311,37 +309,20 @@ const App: React.FC = () => {
                         {error && (<div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-r-lg mb-4 flex items-center gap-3"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg><span>{error}</span></div>)}
                         
                         {!isPlatformAuthenticated ? (
-                            <div className="text-center bg-white dark:bg-gray-800 p-12 rounded-[2rem] shadow-2xl max-w-2xl mx-auto border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in duration-500">
-                                <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl ${selectedPlatform === 'google' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                                    {selectedPlatform === 'google' ? (
-                                        <svg className="w-10 h-10" viewBox="0 0 48 48">
-                                            <path fill="currentColor" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
-                                        </svg>
-                                    ) : (
-                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M12 2.04c-5.52 0-10 4.48-10 10s4.48 10 10 10 10-4.48 10-10-4.48-10-10-10zm2.25 10.5h-2.25v6h-3v-6h-1.5v-2.5h1.5v-2c0-1.29.67-2.5 2.5-2.5h2.25v2.5h-1.5c-.28 0-.5.22-.5.5v1.5h2.25l-.25 2.5z"/>
-                                        </svg>
-                                    )}
-                                </div>
+                            <div className="text-center bg-white dark:bg-gray-800 p-12 rounded-[2rem] shadow-2xl max-w-2xl mx-auto">
                                 <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-4">Conectar {selectedPlatform === 'google' ? 'Google Ads' : 'Meta Ads'}</h3>
-                                <p className="text-gray-500 dark:text-gray-400 mb-10 max-w-sm mx-auto font-medium">
-                                    {selectedPlatform === 'google' 
-                                        ? 'Conecte sua conta do Google Ads para começar a analisar sua performance de pesquisa e vídeo.' 
-                                        : 'Vincule seu perfil da Meta para visualizar métricas de Facebook e Instagram em tempo real.'}
-                                </p>
-                                
                                 <a
-                                    href={selectedPlatform === 'google' ? googleAuthUrl : metaAuthUrl}
-                                    className={`inline-flex items-center justify-center gap-3 text-white font-black py-4 px-10 rounded-2xl transition-all shadow-xl active:scale-95 uppercase tracking-wide w-full max-w-xs ${selectedPlatform === 'google' ? 'bg-green-600 hover:bg-green-700 shadow-green-100' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100'}`}
+                                    href={selectedPlatform === 'google' ? `https://accounts.google.com/o/oauth2/v2/auth?client_id=880633493696-3m5f7ks5rk534tomks1fmihir6qqph3a.apps.googleusercontent.com&redirect_uri=${encodeURIComponent(window.location.origin + '/api/auth/google-callback')}&response_type=code&scope=https://www.googleapis.com/auth/adwords&access_type=offline&prompt=consent` : `https://www.facebook.com/v19.0/dialog/oauth?client_id=897058925982042&redirect_uri=${encodeURIComponent(window.location.origin + '/api/auth')}&scope=ads_read`}
+                                    className={`inline-flex items-center justify-center gap-3 text-white font-black py-4 px-10 rounded-2xl transition-all shadow-xl w-full max-w-xs ${selectedPlatform === 'google' ? 'bg-green-600 hover:bg-green-700 shadow-green-100' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100'}`}
                                 >
-                                    {selectedPlatform === 'google' ? 'Conectar Google Ads' : 'Conectar Meta Ads'}
+                                    Conectar {selectedPlatform === 'google' ? 'Google Ads' : 'Meta Ads'}
                                 </a>
                             </div>
                         ) : (
                             <>
                                 <div className="flex justify-between items-center mb-6">
                                     <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tight">
-                                        {selectedPlatform === 'meta' ? 'Contas Facebook/Instagram' : 'Contas Google Ads'}
+                                        {selectedPlatform === 'meta' ? 'Contas Meta' : 'Contas Google'}
                                     </h2>
                                     <button
                                         onClick={() => setShowBalanceList(!showBalanceList)}
@@ -352,14 +333,24 @@ const App: React.FC = () => {
                                 </div>
 
                                 {showBalanceList && (
-                                    <BalanceList accounts={adAccounts} selectedAccountId={selectedAccount?.id || null} onAccountSelect={handleAccountSelect} isLoading={isLoadingAccounts}/>
+                                    <BalanceList 
+                                        accounts={adAccounts} 
+                                        selectedAccountId={selectedAccountIds.length === 1 ? selectedAccountIds[0] : null} 
+                                        selectedAccountIds={selectedAccountIds}
+                                        onAccountSelect={handleAccountSelect} 
+                                        isLoading={isLoadingAccounts}
+                                    />
                                 )}
                                 
                                 {isLoadingAccounts ? (
                                     <div className="text-center p-12"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div></div>
-                                ) : selectedAccount ? (
+                                ) : consolidatedAccount ? (
                                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                        <BalanceCard account={selectedAccount} />
+                                        <BalanceCard 
+                                            account={consolidatedAccount as AdAccount} 
+                                            isSummary={selectedAccountIds.length > 1} 
+                                            count={selectedAccountIds.length}
+                                        />
                                         
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                             <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
@@ -369,7 +360,7 @@ const App: React.FC = () => {
                                                         <button
                                                             key={level} 
                                                             onClick={() => { setSelectedLevel(level); setSelectedEntityIds([]); }} 
-                                                            className={`px-6 py-2.5 text-xs font-bold rounded-xl transition-all ${selectedLevel === level ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-gray-50 dark:bg-gray-700 text-gray-500 hover:bg-gray-100'}`}
+                                                            className={`px-6 py-2.5 text-xs font-bold rounded-xl transition-all ${selectedLevel === level ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-50 dark:bg-gray-700 text-gray-500 hover:bg-gray-100'}`}
                                                         >{DATA_LEVEL_LABELS[level]}</button>
                                                     ))}
                                                 </div>
@@ -381,7 +372,7 @@ const App: React.FC = () => {
                                                     {dateRangeOptions.map(option => (
                                                         <button
                                                             key={option.key} onClick={() => setDateRange(option.key)}
-                                                            className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all ${dateRange === option.key ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-gray-50 dark:bg-gray-700 text-gray-500 hover:bg-gray-100'}`}
+                                                            className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all ${dateRange === option.key ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-50 dark:bg-gray-700 text-gray-500 hover:bg-gray-100'}`}
                                                         >{option.label}</button>
                                                     ))}
                                                 </div>
@@ -413,14 +404,14 @@ const App: React.FC = () => {
                                         <KpiTable 
                                             data={tableData} 
                                             isLoading={isLoadingKpis} 
-                                            currency={selectedAccount.currency}
+                                            currency={consolidatedAccount.currency}
                                             selectedEntityIds={selectedEntityIds}
                                             onRowClick={handleRowClick}
                                         />
                                     </div>
                                 ) : (adAccounts.length === 0 && !error && (
                                     <div className="text-center bg-white dark:bg-gray-800 p-12 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700">
-                                        <p className="text-gray-500 font-medium">Nenhuma conta de anúncio ativa foi localizada para este perfil.</p>
+                                        <p className="text-gray-500 font-medium">Nenhuma conta ativa foi localizada.</p>
                                     </div>
                                 ))}
                             </>
@@ -434,7 +425,16 @@ const App: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans">
             <Header isAuthenticated={authStatus.meta || authStatus.google} onLogout={handleLogout} subscription={subscription} />
-            <AuthContent />
+            {/* Fix: Replaced undefined AuthContent component with conditional rendering logic for LoginScreen or Dashboard */}
+            {!authStatus.checked ? (
+                <div className="flex items-center justify-center min-h-[calc(100vh-80px)]">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                </div>
+            ) : (!authStatus.meta && !authStatus.google) ? (
+                <LoginScreen />
+            ) : (
+                <Dashboard />
+            )}
         </div>
     );
 };

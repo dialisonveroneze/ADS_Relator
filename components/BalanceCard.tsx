@@ -1,11 +1,14 @@
+
 import React from 'react';
 import { AdAccount } from '../types';
 
 interface BalanceCardProps {
     account: AdAccount | null;
+    isSummary?: boolean;
+    count?: number;
 }
 
-const BalanceCard: React.FC<BalanceCardProps> = ({ account }) => {
+const BalanceCard: React.FC<BalanceCardProps> = ({ account, isSummary, count }) => {
     if (!account) {
         return (
              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg animate-pulse">
@@ -23,7 +26,11 @@ const BalanceCard: React.FC<BalanceCardProps> = ({ account }) => {
     const spentPercentage = spendingLimit > 0 ? (amountSpent / spendingLimit) * 100 : 0;
 
     const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value);
+        try {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: currency || 'BRL' }).format(value);
+        } catch (e) {
+            return `R$ ${value.toFixed(2)}`;
+        }
     };
 
     const getProgressBarColor = () => {
@@ -33,36 +40,45 @@ const BalanceCard: React.FC<BalanceCardProps> = ({ account }) => {
     };
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
-                {name}
-            </h2>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-6 border-l-4 border-blue-600">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
+                    {isSummary ? `Resumo Geral (${count} contas)` : name}
+                </h2>
+                {isSummary && (
+                    <span className="px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 rounded-full text-xs font-bold uppercase tracking-widest">
+                        Consolidado
+                    </span>
+                )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center md:text-left">
                 <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Saldo Atual</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Saldo Atual Total</p>
                     <p className="text-2xl font-semibold text-green-600 dark:text-green-400">{formatCurrency(balance)}</p>
                 </div>
                 <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Valor Gasto</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Gasto</p>
                     <p className="text-2xl font-semibold text-gray-800 dark:text-white">{formatCurrency(amountSpent)}</p>
                 </div>
                 <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Limite de Gastos</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Limite de Gastos Global</p>
                     <p className="text-2xl font-semibold text-gray-800 dark:text-white">{formatCurrency(spendingLimit)}</p>
                 </div>
             </div>
-            <div className="mt-6">
-                <div className="flex justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Progresso de Gastos</span>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{spentPercentage.toFixed(2)}%</span>
+            {spendingLimit > 0 && (
+                <div className="mt-6">
+                    <div className="flex justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Uso do Orçamento Consolidado</span>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{spentPercentage.toFixed(2)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+                        <div
+                            className={`h-2.5 rounded-full transition-all duration-500 ${getProgressBarColor()}`}
+                            style={{ width: `${Math.min(spentPercentage, 100)}%` }}
+                        ></div>
+                    </div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-                    <div
-                        className={`h-2.5 rounded-full transition-all duration-500 ${getProgressBarColor()}`}
-                        style={{ width: `${spentPercentage}%` }}
-                    ></div>
-                </div>
-            </div>
+            )}
         </div>
     );
 };
