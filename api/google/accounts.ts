@@ -42,10 +42,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (listData.error) {
              const errorMsg = listData.error.message || '';
              
-             // Erro comum de "Operation is not implemented" acontece quando o token não está aprovado ou a conta não é MCC
-             if (errorMsg.includes('supported') || errorMsg.includes('implemented') || listResponse.status === 403) {
+             // Tratamento específico para Developer Token de Teste tentando acessar contas reais
+             if (listResponse.status === 403 || errorMsg.includes('developer_token') || errorMsg.includes('not_approved')) {
                  return res.status(403).json({
-                     message: 'Erro do Google Ads: Seu Developer Token (GOOGLE_DEVELOPER_TOKEN) ainda não foi aprovado ou você não está usando uma conta de Administrador (MCC). Verifique no Centro de API se o status é "Acesso Básico" ou "Acesso de Teste".'
+                     message: '⚠️ ERRO DE PERMISSÃO: Seu Developer Token está em modo "Acesso de Teste". No Google Ads, tokens de teste SÓ funcionam com "Contas de Teste" (Test Accounts). Você não poderá ver dados de contas reais até que seu token seja aprovado para "Acesso Básico". Sugestão: Crie uma conta de teste em ads.google.com/home/tools/manager-accounts para validar a integração.'
                  });
              }
              
@@ -101,6 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             } catch (e) { console.error(e); }
         };
 
+        // Busca em paralelo as subcontas das primeiras 10 contas encontradas
         await Promise.all(resourceNames.slice(0, 10).map((rn: string) => fetchSubAccounts(rn)));
 
         if (accounts.length === 0) {
