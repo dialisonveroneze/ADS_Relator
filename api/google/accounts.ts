@@ -23,12 +23,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     if (!developerToken) {
          return res.status(500).json({ 
-             message: '⚠️ CONFIGURAÇÃO PENDENTE: Falta a variável GOOGLE_DEVELOPER_TOKEN na Vercel.' 
+             message: '⚠️ ERRO TÉCNICO: A variável GOOGLE_DEVELOPER_TOKEN não está configurada na Vercel.' 
          });
     }
 
     try {
-        // Passo 1: Listagem básica de IDs (mais estável)
         const listResponse = await fetch('https://googleads.googleapis.com/v18/customers:listAccessibleCustomers', {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -40,26 +39,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         if (listData.error) {
              const errorMsg = listData.error.message || '';
-             // 403 ou erros de token de teste
-             if (listResponse.status === 403 || errorMsg.includes('developer_token') || errorMsg.includes('not_approved')) {
-                 return res.status(403).json({
-                     message: '⚠️ RESTRIÇÃO DE TESTE: Seu token do Google Ads é de "Acesso de Teste". Ele só permite visualizar "Contas de Teste".'
+             // Erro 501 costuma ser falta de permissão para ler metadados detalhados de contas específicas
+             if (listResponse.status === 501) {
+                 return res.status(501).json({ 
+                     message: '⚠️ CONTA NÃO SUPORTADA: O Google Ads retornou "501 Not Implemented". Isso ocorre em contas que não permitem acesso via API de pesquisa detalhada ou tokens de teste.' 
                  });
              }
-             // Se a listagem principal retornar 501, tratamos aqui para não quebrar o front
-             if (listResponse.status === 501 || listResponse.status === 500) {
-                 return res.status(200).json([]); 
+             if (listResponse.status === 403 || errorMsg.includes('developer_token') || errorMsg.includes('not_approved')) {
+                 return res.status(403).json({
+                     message: '⚠️ TOKEN DE TESTE DETECTADO: Seu token do Google Ads é nível "Teste". Ele só permite acessar contas de anúncio que você criou como "Contas de Teste" dentro de um Gerenciador (MCC) de Teste.'
+                 });
              }
-             return res.status(listResponse.status || 500).json({ message: `Erro Google API: ${errorMsg}` });
+             return res.status(listResponse.status || 500).json({ message: `Erro Google Ads: ${errorMsg}` });
         }
 
         const resourceNames = listData.resourceNames || [];
         const accounts: AdAccount[] = [];
 
-        // Passo 2: Buscar detalhes com proteção total contra 501 (Not Implemented)
+        // Tentativa de buscar detalhes
         const fetchAccountDetails = async (resourceName: string) => {
             const customerId = resourceName.split('/')[1];
-            
             try {
                 const response = await fetch(`https://googleads.googleapis.com/v18/customers/${customerId}`, {
                     method: 'GET',
@@ -69,15 +68,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     }
                 });
 
-                if (!response.ok) {
-                    throw new Error(`Google API Error: ${response.status}`);
-                }
-
+                if (response.status === 501) throw new Error("501");
                 const data = await response.json();
                 
                 accounts.push({
-                    id: data.id,
-                    name: data.descriptiveName || `Conta ${data.id}`,
+                    id: data.id || customerId,
+                    name: data.descriptiveName || `Conta ${data.id || customerId}`,
                     balance: 0,
                     spendingLimit: 0,
                     amountSpent: 0,
@@ -85,11 +81,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     provider: 'google'
                 });
             } catch (e) {
-                // FALLBACK CRÍTICO: Se o Google disser "Not Implemented" nos detalhes (comum em 501),
-                // apenas adicionamos a conta com o ID, permitindo que o usuário prossiga.
+                // Se falhar o detalhe, ainda mostra o ID para não ficar vazio
                 accounts.push({
                     id: customerId,
-                    name: `ID: ${customerId} (Dados Limitados)`,
+                    name: `Conta ID: ${customerId} (Sem Detalhes)`,
                     balance: 0,
                     spendingLimit: 0,
                     amountSpent: 0,
@@ -99,23 +94,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
         };
 
-        // Processa em paralelo mas com limite de 10
-        await Promise.all(resourceNames.slice(0, 10).map((rn: string) => fetchAccountDetails(rn)));
+        await Promise.all(resourceNames.slice(0, 15).map((rn: string) => fetchAccountDetails(rn)));
 
         const uniqueAccounts = Array.from(new Map(accounts.map(item => [item.id, item])).values());
         
-        // Se a busca de detalhes falhou completamente mas temos IDs, garantimos o retorno
-        if (uniqueAccounts.length === 0 && resourceNames.length > 0) {
-            resourceNames.forEach((rn: string) => {
-                const id = rn.split('/')[1];
-                uniqueAccounts.push({ id, name: `Conta ${id}`, balance: 0, spendingLimit: 0, amountSpent: 0, currency: 'BRL', provider: 'google' });
-            });
+        if (uniqueAccounts.length === 0) {
+            return res.status(404).json({ message: 'Nenhuma conta acessível foi encontrada vinculada a este e-mail do Google.' });
         }
 
         res.status(200).json(uniqueAccounts);
 
     } catch (error: any) {
-        console.error("Erro crítico em accounts.ts:", error);
-        res.status(200).json([]); // Retorna vazio em vez de 500 para evitar travamento visual
+        console.error("Erro accounts.ts:", error);
+        res.status(500).json({ message: 'Erro ao buscar contas. Verifique seu Developer Token.' });
     }
 }
