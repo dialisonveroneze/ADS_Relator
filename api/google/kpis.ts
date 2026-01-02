@@ -70,44 +70,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const response = await fetch(`https://googleads.googleapis.com/v18/customers/${accountId}/googleAds:search`, {
-            method: 'POST',
-            headers: {
+        const fetchKpis = async (useLoginHeader: boolean) => {
+            const headers: Record<string, string> = {
                 'Authorization': `Bearer ${accessToken}`,
                 'developer-token': developerToken,
                 'Content-Type': 'application/json',
-                // REMOVIDO: login-customer-id pode causar 501 se a conta não for MCC ou se houver conflito de token de teste
-            },
-            body: JSON.stringify({ query })
-        });
+            };
+            if (useLoginHeader) headers['login-customer-id'] = accountId;
 
-        const data = await response.json();
-        
-        if (data.error) {
-            // Se der 501 aqui, tentamos uma última vez COM o header (algumas contas exigem, outras proíbem)
-            if (response.status === 501 || data.error.message.includes('not implemented')) {
-                const retryResponse = await fetch(`https://googleads.googleapis.com/v18/customers/${accountId}/googleAds:search`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'developer-token': developerToken,
-                        'Content-Type': 'application/json',
-                        'login-customer-id': accountId 
-                    },
-                    body: JSON.stringify({ query })
-                });
-                const retryData = await retryResponse.json();
-                if (retryData.error) throw retryData.error;
-                return res.status(200).json(formatResults(retryData.results || [], level, accountId));
-            }
-            throw data.error;
+            const response = await fetch(`https://googleads.googleapis.com/v18/customers/${accountId}/googleAds:search`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ query })
+            });
+
+            const data = await response.json();
+            return { ok: response.ok, status: response.status, data };
+        };
+
+        // Tentativa 1: Sem login-customer-id (padrão para contas individuais)
+        let result = await fetchKpis(false);
+
+        // Se der 501 (Not Implemented) ou erro de permissão, tenta COM o header (exigido para contas gerenciadas/MCC)
+        if (!result.ok && (result.status === 501 || result.status === 403 || (result.data?.error?.message || '').includes('not implemented'))) {
+            result = await fetchKpis(true);
         }
 
-        res.status(200).json(formatResults(data.results || [], level, accountId));
+        if (!result.ok) {
+            throw new Error(result.data?.error?.message || `Erro API Google: ${result.status}`);
+        }
+
+        res.status(200).json(formatResults(result.data.results || [], level, accountId));
 
     } catch (error: any) {
         console.error("Erro KPIs Google:", error);
-        res.status(500).json({ message: error.message || 'Erro ao buscar KPIs do Google.' });
+        res.status(500).json({ message: error.message || 'Erro ao buscar métricas do Google Ads.' });
     }
 }
 
