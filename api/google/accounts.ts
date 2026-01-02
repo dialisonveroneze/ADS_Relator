@@ -18,17 +18,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const developerToken = (process.env.GOOGLE_DEVELOPER_TOKEN || '').trim();
 
     if (!accessToken) {
-        return res.status(401).json({ message: 'Sessão expirada. Conecte-se ao Google Ads novamente.' });
+        return res.status(401).json({ message: 'Sessão expirada no Google. Por favor, faça login novamente.' });
     }
     
     if (!developerToken) {
          return res.status(500).json({ 
-             message: '⚠️ CONFIGURAÇÃO PENDENTE: Falta a variável GOOGLE_DEVELOPER_TOKEN na Vercel.' 
+             message: '⚠️ ERRO DE CONFIGURAÇÃO: A variável GOOGLE_DEVELOPER_TOKEN não foi configurada no ambiente Vercel.' 
          });
     }
 
     try {
-        // Passo 1: Listagem básica de IDs das contas acessíveis
+        // Passo 1: Listagem básica de IDs (Endpoint mais estável da API)
         const listResponse = await fetch('https://googleads.googleapis.com/v18/customers:listAccessibleCustomers', {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -40,25 +40,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         if (listData.error) {
              const errorMsg = listData.error.message || '';
-             // Erro 403 costuma indicar token de teste tentando acessar conta real
+             // Tratamento específico para Token de Teste tentando acessar Contas Reais
              if (listResponse.status === 403 || errorMsg.includes('developer_token') || errorMsg.includes('not_approved')) {
                  return res.status(403).json({
-                     message: '⚠️ RESTRIÇÃO DE TOKEN: Seu Developer Token do Google Ads está em modo "Acesso de Teste". Ele só pode acessar "Contas de Teste" (Test Accounts). Se você logou com uma conta que gerencia anúncios reais, a API retornará erro. Sugestão: Crie uma conta de teste no painel de desenvolvedor do Google Ads.'
+                     message: '⚠️ TOKEN DE TESTE DETECTADO: Seu Developer Token do Google Ads está em modo de teste e não tem permissão para ler contas de produção. Use uma conta de teste ou aguarde a aprovação do token pelo Google.'
                  });
              }
-             return res.status(500).json({ message: `Erro Google API: ${errorMsg}` });
+             return res.status(listResponse.status || 500).json({ message: `Erro Google API: ${errorMsg}` });
         }
 
         const resourceNames = listData.resourceNames || [];
         const accounts: AdAccount[] = [];
 
-        // Passo 2: Buscar detalhes da conta usando GET (mais estável que SEARCH para metadados básicos)
+        // Passo 2: Buscar detalhes (Nome/Moeda) com proteção total contra falhas
         const fetchAccountDetails = async (resourceName: string) => {
             const customerId = resourceName.split('/')[1];
             
             try {
-                // Usamos o endpoint de GET Customer em vez de SEARCH para evitar o erro 501 (Not Implemented)
-                // que ocorre frequentemente com tokens de teste ou contas específicas.
+                // Tentativa de buscar metadados básicos
                 const response = await fetch(`https://googleads.googleapis.com/v18/customers/${customerId}`, {
                     method: 'GET',
                     headers: {
@@ -67,26 +66,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     }
                 });
 
+                if (!response.ok) throw new Error('Failed fetch');
                 const customer = await response.json();
                 
-                if (customer.error) {
-                    throw new Error(customer.error.message);
+                if (customer && customer.id) {
+                    accounts.push({
+                        id: customer.id,
+                        name: customer.descriptiveName || `Conta ${customer.id}`,
+                        balance: 0,
+                        spendingLimit: 0,
+                        amountSpent: 0,
+                        currency: customer.currencyCode || 'BRL',
+                        provider: 'google'
+                    });
+                } else {
+                    throw new Error('Invalid data');
                 }
-
-                accounts.push({
-                    id: customer.id,
-                    name: customer.descriptiveName || `Conta ${customer.id}`,
-                    balance: 0,
-                    spendingLimit: 0,
-                    amountSpent: 0,
-                    currency: customer.currencyCode || 'BRL',
-                    provider: 'google'
-                });
             } catch (e) {
-                // Fallback: Se falhar em pegar o nome, mantém apenas o ID para não quebrar o dashboard
+                // FALLBACK: Se falhar em buscar detalhes (comum em 501 ou tokens de teste),
+                // apenas adicionamos a conta com o ID básico para não quebrar o dashboard.
                 accounts.push({
                     id: customerId,
-                    name: `ID: ${customerId}`,
+                    name: `ID: ${customerId} (Dados Limitados)`,
                     balance: 0,
                     spendingLimit: 0,
                     amountSpent: 0,
@@ -96,23 +97,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
         };
 
-        // Executa as buscas de detalhes (limite de 15 para evitar timeout)
-        await Promise.all(resourceNames.slice(0, 15).map((rn: string) => fetchAccountDetails(rn)));
+        // Processamos em paralelo mas limitamos a quantidade para evitar timeout da Vercel
+        const limit = resourceNames.slice(0, 10);
+        await Promise.all(limit.map((rn: string) => fetchAccountDetails(rn)));
 
-        const uniqueAccounts = Array.from(new Map(accounts.map(item => [item.id, item])).values());
-        
-        // Se a busca de detalhes falhou em todas mas temos IDs, mostramos os IDs
-        if (uniqueAccounts.length === 0 && resourceNames.length > 0) {
-            resourceNames.forEach((rn: string) => {
+        // Se sobraram contas além do limite de busca detalhada, adiciona elas apenas com ID
+        if (resourceNames.length > 10) {
+            resourceNames.slice(10).forEach(rn => {
                 const id = rn.split('/')[1];
-                uniqueAccounts.push({ id, name: `Conta ${id}`, balance: 0, spendingLimit: 0, amountSpent: 0, currency: 'BRL', provider: 'google' });
+                accounts.push({ id, name: `Conta ${id}`, balance: 0, spendingLimit: 0, amountSpent: 0, currency: 'BRL', provider: 'google' });
             });
         }
 
+        const uniqueAccounts = Array.from(new Map(accounts.map(item => [item.id, item])).values());
         res.status(200).json(uniqueAccounts);
 
     } catch (error: any) {
-        console.error("Erro critico accounts.ts:", error);
-        res.status(500).json({ message: error.message || 'Erro ao processar contas do Google Ads.' });
+        console.error("Erro Crítico em /api/google/accounts:", error);
+        res.status(500).json({ message: 'Erro interno ao processar as contas do Google Ads. Verifique os logs do servidor.' });
     }
 }

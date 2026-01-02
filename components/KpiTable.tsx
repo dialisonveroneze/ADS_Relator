@@ -12,8 +12,6 @@ interface KpiTableProps {
 
 type SortableKeys = keyof Omit<KpiData, 'id' | 'level' | 'date' | 'entityId'>;
 
-// CONFIGURAÇÃO DE CABEÇALHO (ESTÁTICA E ESTRITA)
-// A ORDEM DO ARRAY DETERMINA A ORDEM NA TELA
 const HEADERS_CONFIG: { label: string; key: SortableKeys; align?: 'left' | 'right' | 'center'; minWidth: string }[] = [
     { label: "Nome", key: "name", align: 'left', minWidth: 'min-w-[160px] md:min-w-[250px]' },
     { label: "Valor Gasto", key: "amountSpent", align: 'right', minWidth: 'min-w-[110px] md:min-w-[120px]' },
@@ -62,7 +60,6 @@ const KpiTable: React.FC<KpiTableProps> = ({ data, isLoading, currency, selected
         setVisibleKeys(newSet);
     };
 
-    // Mantém a ordem original do HEADERS_CONFIG, apenas filtrando o que não está visível
     const visibleHeaders = HEADERS_CONFIG.filter(h => visibleKeys.has(h.key));
 
     const formatCurrency = (value: number) => {
