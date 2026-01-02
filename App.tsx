@@ -118,20 +118,43 @@ const App: React.FC = () => {
 
     useEffect(() => { fetchKpiData(); }, [fetchKpiData]);
 
+    // Lógica corrigida para garantir agrupamento por data no gráfico
     const aggregatedChartData = useMemo(() => {
         let dailyData = kpiData.filter(d => !d.isPeriodTotal);
-        if (selectedEntityIds.length > 0) dailyData = dailyData.filter(d => selectedEntityIds.includes(d.entityId));
-        if (selectedLevel === DataLevel.ACCOUNT) return dailyData.sort((a, b) => a.date.localeCompare(b.date));
         
+        // Se houver itens específicos selecionados na tabela, filtra o gráfico por eles
+        if (selectedEntityIds.length > 0) {
+            dailyData = dailyData.filter(d => selectedEntityIds.includes(d.entityId));
+        }
+
+        // Agrupa SEMPRE por data para o gráfico, somando as métricas de todas as entidades do mesmo dia
         const dailyTotals: { [date: string]: KpiData } = {};
+        
         dailyData.forEach(item => {
             if (!dailyTotals[item.date]) {
-                dailyTotals[item.date] = { ...item, id: item.date, entityId: item.date, name: `Resumo - ${item.date}`, amountSpent: 0, impressions: 0, reach: 0, clicks: 0, results: 0 };
+                dailyTotals[item.date] = { 
+                    ...item, 
+                    id: item.date, 
+                    entityId: item.date, 
+                    name: `Resumo - ${item.date}`, 
+                    amountSpent: 0, 
+                    impressions: 0, 
+                    reach: 0, 
+                    clicks: 0, 
+                    results: 0,
+                    inlineLinkClicks: 0 
+                };
             }
             const t = dailyTotals[item.date];
-            t.amountSpent += item.amountSpent; t.impressions += item.impressions; t.reach += item.reach; t.clicks += item.clicks; t.results += item.results;
+            t.amountSpent += item.amountSpent;
+            t.impressions += item.impressions;
+            t.reach += item.reach;
+            t.clicks += item.clicks;
+            t.results += item.results;
+            t.inlineLinkClicks += (item.inlineLinkClicks || 0);
         });
 
+        // Retorna o array ordenado por data crescente
         return Object.values(dailyTotals).sort((a, b) => a.date.localeCompare(b.date));
     }, [kpiData, selectedLevel, selectedEntityIds]);
     
@@ -144,9 +167,14 @@ const App: React.FC = () => {
         const aggregated: Record<string, KpiData> = {};
         kpiData.forEach(item => {
             if (item.isPeriodTotal) return;
-            if (!aggregated[item.entityId]) aggregated[item.entityId] = { ...item, amountSpent: 0, impressions: 0, reach: 0, clicks: 0, results: 0 };
+            if (!aggregated[item.entityId]) aggregated[item.entityId] = { ...item, amountSpent: 0, impressions: 0, reach: 0, clicks: 0, results: 0, inlineLinkClicks: 0 };
             const t = aggregated[item.entityId];
-            t.amountSpent += item.amountSpent; t.impressions += item.impressions; t.reach += item.reach; t.clicks += item.clicks; t.results += item.results;
+            t.amountSpent += item.amountSpent; 
+            t.impressions += item.impressions; 
+            t.reach += item.reach; 
+            t.clicks += item.clicks; 
+            t.results += item.results;
+            t.inlineLinkClicks += (item.inlineLinkClicks || 0);
         });
         return Object.values(aggregated);
     }, [kpiData, selectedLevel]);
@@ -159,7 +187,6 @@ const App: React.FC = () => {
     const Dashboard = () => {
         const isPlatformAuthenticated = selectedPlatform === 'meta' ? authStatus.meta : authStatus.google;
         
-        // Estilo de botões de filtro consistentes com o layout anterior
         const FilterButton = ({ active, onClick, children }: any) => (
             <button onClick={onClick} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-all ${active ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'}`}>{children}</button>
         );
