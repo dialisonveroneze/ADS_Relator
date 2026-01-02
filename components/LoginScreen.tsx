@@ -38,7 +38,6 @@ const LoginScreen: React.FC = () => {
                         href={metaAuthUrl}
                         className="w-full bg-[#1877F2] hover:bg-[#166fe5] text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-[1.02] duration-300 ease-in-out flex items-center justify-center gap-3"
                     >
-                        {/* CORREÇÃO DO viewBox PARA 0 0 24 24 */}
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.04c-5.52 0-10 4.48-10 10s4.48 10 10 10 10-4.48 10-10-4.48-10-10-10zm2.25 10.5h-2.25v6h-3v-6h-1.5v-2.5h1.5v-2c0-1.29.67-2.5 2.5-2.5h2.25v2.5h-1.5c-.28 0-.5.22-.5.5v1.5h2.25l-.25 2.5z"/></svg>
                         Entrar com Meta Ads
                     </a>

@@ -46,11 +46,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                      message: '⚠️ RESTRIÇÃO DE TESTE: Seu token do Google Ads é de "Acesso de Teste". Ele só permite visualizar "Contas de Teste".'
                  });
              }
-             // Se a listagem principal retornar 501, tratamos aqui
-             if (listResponse.status === 501) {
-                 return res.status(200).json([]); // Retorna vazio em vez de erro para o front
+             // Se a listagem principal retornar 501, tratamos aqui para não quebrar o front
+             if (listResponse.status === 501 || listResponse.status === 500) {
+                 return res.status(200).json([]); 
              }
-             return res.status(500).json({ message: `Erro Google API: ${errorMsg}` });
+             return res.status(listResponse.status || 500).json({ message: `Erro Google API: ${errorMsg}` });
         }
 
         const resourceNames = listData.resourceNames || [];
@@ -69,13 +69,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     }
                 });
 
-                const data = await response.json();
-                
-                // Se a API retornar 501 aqui, o catch resolve
-                if (data.error || response.status === 501) {
-                    throw new Error("501");
+                if (!response.ok) {
+                    throw new Error(`Google API Error: ${response.status}`);
                 }
 
+                const data = await response.json();
+                
                 accounts.push({
                     id: data.id,
                     name: data.descriptiveName || `Conta ${data.id}`,
@@ -86,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     provider: 'google'
                 });
             } catch (e) {
-                // FALLBACK CRÍTICO: Se o Google disser "Not Implemented" nos detalhes,
+                // FALLBACK CRÍTICO: Se o Google disser "Not Implemented" nos detalhes (comum em 501),
                 // apenas adicionamos a conta com o ID, permitindo que o usuário prossiga.
                 accounts.push({
                     id: customerId,
@@ -117,6 +116,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     } catch (error: any) {
         console.error("Erro crítico em accounts.ts:", error);
-        res.status(500).json({ message: 'Erro ao processar contas do Google Ads.' });
+        res.status(200).json([]); // Retorna vazio em vez de 500 para evitar travamento visual
     }
 }
