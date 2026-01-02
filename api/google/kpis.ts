@@ -76,53 +76,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 'Authorization': `Bearer ${accessToken}`,
                 'developer-token': developerToken,
                 'Content-Type': 'application/json',
-                'login-customer-id': accountId 
+                // REMOVIDO: login-customer-id pode causar 501 se a conta não for MCC ou se houver conflito de token de teste
             },
             body: JSON.stringify({ query })
         });
 
         const data = await response.json();
-        if (data.error) throw data.error;
+        
+        if (data.error) {
+            // Se der 501 aqui, tentamos uma última vez COM o header (algumas contas exigem, outras proíbem)
+            if (response.status === 501 || data.error.message.includes('not implemented')) {
+                const retryResponse = await fetch(`https://googleads.googleapis.com/v18/customers/${accountId}/googleAds:search`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'developer-token': developerToken,
+                        'Content-Type': 'application/json',
+                        'login-customer-id': accountId 
+                    },
+                    body: JSON.stringify({ query })
+                });
+                const retryData = await retryResponse.json();
+                if (retryData.error) throw retryData.error;
+                return res.status(200).json(formatResults(retryData.results || [], level, accountId));
+            }
+            throw data.error;
+        }
 
-        const results = data.results || [];
-        const formattedData = results.map((row: any) => {
-            const m = row.metrics;
-            const segmentDate = row.segments.date;
-            
-            let id = accountId, name = 'Conta Google';
-            if (level === DataLevel.CAMPAIGN) { id = row.campaign.id; name = row.campaign.name; }
-            else if (level === DataLevel.AD_SET) { id = row.adGroup.id; name = row.adGroup.name; }
-            else if (level === DataLevel.AD) { id = row.adGroupAd.ad.id; name = row.adGroupAd.ad.name || 'Anúncio'; }
-
-            const spend = (parseInt(m.costMicros) || 0) / 1000000;
-            const impressions = parseInt(m.impressions) || 0;
-            const clicks = parseInt(m.clicks) || 0;
-            const conversions = parseFloat(m.conversions) || 0;
-
-            return {
-                id: `${id}_${segmentDate}`,
-                entityId: id,
-                name: name,
-                level: level,
-                date: segmentDate,
-                amountSpent: spend,
-                impressions: impressions,
-                reach: impressions,
-                clicks: clicks,
-                inlineLinkClicks: clicks,
-                ctr: (parseFloat(m.ctr) || 0) * 100,
-                cpc: (parseFloat(m.averageCpc) || 0) / 1000000,
-                cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
-                costPerInlineLinkClick: (parseFloat(m.averageCpc) || 0) / 1000000,
-                results: conversions,
-                costPerResult: conversions > 0 ? spend / conversions : 0,
-                isPeriodTotal: false
-            };
-        });
-
-        res.status(200).json(formattedData);
+        res.status(200).json(formatResults(data.results || [], level, accountId));
 
     } catch (error: any) {
+        console.error("Erro KPIs Google:", error);
         res.status(500).json({ message: error.message || 'Erro ao buscar KPIs do Google.' });
     }
+}
+
+function formatResults(results: any[], level: string, accountId: string) {
+    return results.map((row: any) => {
+        const m = row.metrics;
+        const segmentDate = row.segments.date;
+        
+        let id = accountId, name = 'Conta Google';
+        if (level === DataLevel.CAMPAIGN) { id = row.campaign.id; name = row.campaign.name; }
+        else if (level === DataLevel.AD_SET) { id = row.adGroup.id; name = row.adGroup.name; }
+        else if (level === DataLevel.AD) { id = row.adGroupAd.ad.id; name = row.adGroupAd.ad.name || 'Anúncio'; }
+
+        const spend = (parseInt(m.costMicros) || 0) / 1000000;
+        const impressions = parseInt(m.impressions) || 0;
+        const clicks = parseInt(m.clicks) || 0;
+        const conversions = parseFloat(m.conversions) || 0;
+
+        return {
+            id: `${id}_${segmentDate}`,
+            entityId: id,
+            name: name,
+            level: level,
+            date: segmentDate,
+            amountSpent: spend,
+            impressions: impressions,
+            reach: impressions,
+            clicks: clicks,
+            inlineLinkClicks: clicks,
+            ctr: (parseFloat(m.ctr) || 0) * 100,
+            cpc: (parseFloat(m.averageCpc) || 0) / 1000000,
+            cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+            costPerInlineLinkClick: (parseFloat(m.averageCpc) || 0) / 1000000,
+            results: conversions,
+            costPerResult: conversions > 0 ? spend / conversions : 0,
+            isPeriodTotal: false
+        };
+    });
 }
