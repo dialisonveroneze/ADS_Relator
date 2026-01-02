@@ -15,8 +15,6 @@ export interface AdAccount {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cookies = cookie.parse(req.headers.cookie || '');
     const accessToken = cookies.google_access_token;
-    
-    // Nome exato da variável esperado no sistema
     const developerToken = (process.env.GOOGLE_DEVELOPER_TOKEN || '').trim();
 
     if (!accessToken) {
@@ -30,6 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
+        // Passo 1: Listar as contas que o usuário autenticado tem acesso direto
         const listResponse = await fetch('https://googleads.googleapis.com/v18/customers:listAccessibleCustomers', {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -41,80 +40,103 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         if (listData.error) {
              const errorMsg = listData.error.message || '';
-             
-             // Tratamento específico para Developer Token de Teste tentando acessar contas reais
              if (listResponse.status === 403 || errorMsg.includes('developer_token') || errorMsg.includes('not_approved')) {
                  return res.status(403).json({
-                     message: '⚠️ ERRO DE PERMISSÃO: Seu Developer Token está em modo "Acesso de Teste". No Google Ads, tokens de teste SÓ funcionam com "Contas de Teste" (Test Accounts). Você não poderá ver dados de contas reais até que seu token seja aprovado para "Acesso Básico". Sugestão: Crie uma conta de teste em ads.google.com/home/tools/manager-accounts para validar a integração.'
+                     message: '⚠️ ERRO DE PERMISSÃO: Seu Developer Token está em modo "Acesso de Teste". No Google Ads, tokens de teste SÓ funcionam com "Contas de Teste" (Test Accounts). Se você logou com um e-mail que tem contas reais, a API vai recusar. Sugestão: Crie um Gerenciador de Teste em ads.google.com/home/tools/manager-accounts.'
                  });
              }
-             
              return res.status(500).json({ message: `Erro Google API: ${errorMsg}` });
         }
 
         const resourceNames = listData.resourceNames || [];
         const accounts: AdAccount[] = [];
 
-        const fetchSubAccounts = async (resourceName: string) => {
+        // Passo 2: Para cada conta acessível, vamos verificar se ela tem subcontas (se for MCC)
+        const fetchAccountDetails = async (resourceName: string) => {
             const customerId = resourceName.split('/')[1];
-            const query = `
-                SELECT 
-                    customer_client.id, 
-                    customer_client.descriptive_name, 
-                    customer_client.currency_code, 
-                    customer_client.manager,
-                    customer_client.status
-                FROM customer_client
-                WHERE customer_client.status = 'ENABLED' 
-                AND customer_client.level <= 1
-            `;
-
+            
+            // Primeiro, pegamos os dados básicos da conta em si
+            const basicQuery = `SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer WHERE customer.id = '${customerId}'`;
+            
             try {
-                const searchResponse = await fetch(`https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:search`, {
+                const response = await fetch(`https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:search`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
                         'developer-token': developerToken,
                         'Content-Type': 'application/json',
-                        'login-customer-id': customerId
+                        // Omitimos login-customer-id aqui para evitar erros de "operação não suportada" em contas não-MCC
                     },
-                    body: JSON.stringify({ query })
+                    body: JSON.stringify({ query: basicQuery })
                 });
-                
-                const searchData = await searchResponse.json();
-                if (searchData.results) {
-                    searchData.results.forEach((row: any) => {
-                        const client = row.customerClient;
-                        if (!client.manager) {
-                            accounts.push({
-                                id: client.id,
-                                name: client.descriptiveName || `Conta ${client.id}`,
-                                balance: 0,
-                                spendingLimit: 0,
-                                amountSpent: 0,
-                                currency: client.currencyCode,
-                                provider: 'google'
+
+                const data = await response.json();
+                if (data.results && data.results[0]) {
+                    const c = data.results[0].customer;
+                    
+                    // Adicionamos a conta atual
+                    if (!c.manager) {
+                        accounts.push({
+                            id: c.id,
+                            name: c.descriptiveName || `Conta ${c.id}`,
+                            balance: 0,
+                            spendingLimit: 0,
+                            amountSpent: 0,
+                            currency: c.currencyCode,
+                            provider: 'google'
+                        });
+                    } else {
+                        // Se for Gerenciador (MCC), tentamos buscar as subcontas
+                        const subQuery = `
+                            SELECT customer_client.id, customer_client.descriptive_name, customer_client.currency_code, customer_client.status 
+                            FROM customer_client 
+                            WHERE customer_client.status = 'ENABLED' AND customer_client.manager = false
+                        `;
+                        const subResponse = await fetch(`https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:search`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'developer-token': developerToken,
+                                'Content-Type': 'application/json',
+                                'login-customer-id': customerId
+                            },
+                            body: JSON.stringify({ query: subQuery })
+                        });
+                        const subData = await subResponse.json();
+                        if (subData.results) {
+                            subData.results.forEach((row: any) => {
+                                const sc = row.customerClient;
+                                accounts.push({
+                                    id: sc.id,
+                                    name: sc.descriptiveName || `Conta ${sc.id}`,
+                                    balance: 0,
+                                    spendingLimit: 0,
+                                    amountSpent: 0,
+                                    currency: sc.currencyCode,
+                                    provider: 'google'
+                                });
                             });
                         }
-                    });
+                    }
+                } else {
+                    // Fallback se a busca falhar: adiciona a conta básica
+                    accounts.push({ id: customerId, name: `Conta ${customerId}`, balance: 0, spendingLimit: 0, amountSpent: 0, currency: 'BRL', provider: 'google' });
                 }
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(`Erro ao processar conta ${customerId}:`, e);
+                // Mesmo com erro, tentamos manter a conta na lista
+                accounts.push({ id: customerId, name: `Conta ${customerId}`, balance: 0, spendingLimit: 0, amountSpent: 0, currency: 'BRL', provider: 'google' });
+            }
         };
 
-        // Busca em paralelo as subcontas das primeiras 10 contas encontradas
-        await Promise.all(resourceNames.slice(0, 10).map((rn: string) => fetchSubAccounts(rn)));
-
-        if (accounts.length === 0) {
-            for (const rn of resourceNames) {
-                const id = rn.split('/')[1];
-                accounts.push({
-                    id: id, name: `Conta ${id}`, balance: 0, spendingLimit: 0, amountSpent: 0, currency: 'BRL', provider: 'google'
-                });
-            }
+        // Processa as contas em pequenos blocos para não estourar rate limit
+        for (const rn of resourceNames.slice(0, 15)) {
+            await fetchAccountDetails(rn);
         }
 
         const uniqueAccounts = Array.from(new Map(accounts.map(item => [item.id, item])).values());
         res.status(200).json(uniqueAccounts);
+
     } catch (error: any) {
         res.status(500).json({ message: error.message || 'Erro interno ao processar contas.' });
     }
